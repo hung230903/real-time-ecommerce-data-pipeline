@@ -38,12 +38,21 @@ class KafkaMonitoringHook(BaseHook):
         if self._conn is None:
             conn = self.get_connection(self.kafka_conn_id)
             extra = conn.extra_dejson if conn.extra else {}
+            host = conn.host or "localhost"
+            port = conn.port or 9092
+            
+            # If host contains a comma, it's likely a bootstrap_servers string
+            if "," in host:
+                default_bootstrap = host
+            else:
+                default_bootstrap = f"{host}:{port}"
+                
             self._conn = {
-                "host": conn.host or "localhost",
-                "port": conn.port or 9092,
+                "host": host,
+                "port": port,
                 "bootstrap_servers": extra.get(
                     "bootstrap_servers",
-                    f"{conn.host or 'localhost'}:{conn.port or 9092}"
+                    default_bootstrap
                 ),
                 "sasl_mechanism": extra.get("sasl_mechanism", "PLAIN"),
                 "security_protocol": extra.get("security_protocol", "SASL_PLAINTEXT"),
@@ -63,21 +72,34 @@ class KafkaMonitoringHook(BaseHook):
             True if broker is reachable, False otherwise.
         """
         conn = self.get_conn()
-        host = conn["host"]
-        port = conn["port"]
+        bootstrap_servers = conn["bootstrap_servers"]
 
-        self.log.info(f"Checking connectivity to Kafka broker {host}:{port}")
-        with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
-            sock.settimeout(timeout)
-            result = sock.connect_ex((host, int(port)))
-            is_up = result == 0
+        for server in bootstrap_servers.split(","):
+            server = server.strip()
+            if ":" in server:
+                host, port_str = server.split(":", 1)
+                port = int(port_str)
+            else:
+                host = server
+                port = int(conn["port"])
 
-        if is_up:
-            self.log.info(f"Kafka broker {host}:{port} is reachable.")
-        else:
-            self.log.warning(f"Kafka broker {host}:{port} is NOT reachable.")
+            self.log.info(f"Checking connectivity to Kafka broker {host}:{port}")
+            with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
+                sock.settimeout(timeout)
+                try:
+                    result = sock.connect_ex((host, port))
+                    is_up = (result == 0)
+                except Exception as e:
+                    self.log.warning(f"Error checking {host}:{port} - {e}")
+                    is_up = False
 
-        return is_up
+            if is_up:
+                self.log.info(f"Kafka broker {host}:{port} is reachable.")
+                return True
+            else:
+                self.log.warning(f"Kafka broker {host}:{port} is NOT reachable.")
+
+        return False
 
     def get_cluster_health(self, timeout: int = 5) -> Dict[str, Any]:
         """

@@ -3,13 +3,53 @@ Spark Job Control DAG.
 
 Manages the lifecycle of the Spark Structured Streaming job:
 submission, monitoring, and cleanup.
+
+Configuration is loaded from Airflow Variables and Connections – no
+credentials are hardcoded in this file.
+
+Required Airflow setup (UI → Admin):
+  Variables:
+    - project_path        : absolute path to the project on the host
+                            (default: /app)
+    - kafka_target_topic  : Kafka topic to consume
+                            (default: product_view)
+  Connections:
+    - conn_id "postgres_streaming":
+        Conn Type : Postgres
+        Host      : <postgres host / docker bridge IP>
+        Port      : 5432
+        Schema    : spark_streaming_schema
+        Login     : <postgres user>
+        Password  : <postgres password>
+    - conn_id "kafka_default":
+        Conn Type : Generic
+        Host      : <kafka bootstrap servers>
 """
 
+import json
 from datetime import datetime, timedelta
+
 from airflow import DAG
+from airflow.hooks.base import BaseHook
+from airflow.models import Variable, TaskInstance
 from airflow.operators.python import PythonOperator, BranchPythonOperator
-from airflow.models import TaskInstance
 from plugins.operators.spark_job import SparkStreamingOperator
+
+# ─── Configuration (resolved at parse time from Airflow store) ────────
+
+PROJECT_PATH = Variable.get("project_path", default_var="/app")
+KAFKA_TOPIC = Variable.get("kafka_target_topic", default_var="product_view")
+
+_pg_conn = BaseHook.get_connection("postgres_streaming")
+_kafka_conn = BaseHook.get_connection("kafka_default")
+
+PG_HOST = _pg_conn.host
+PG_PORT = str(_pg_conn.port or 5432)
+PG_DB = _pg_conn.schema or "spark_streaming_schema"
+PG_USER = _pg_conn.login
+PG_PASSWORD = _pg_conn.password
+
+KAFKA_BOOTSTRAP_SERVERS = _kafka_conn.host or "kafka-0:9092,kafka-1:9092,kafka-2:9092"
 
 # ─── Default Arguments ────────────────────────────────────────────────
 
@@ -108,11 +148,17 @@ with DAG(
         python_callable=_preflight_failed,
     )
 
-    # SUCCESS: Using custom operator
+    # SUCCESS: all config injected from Airflow Variables / Connections
     submit_spark_job = SparkStreamingOperator(
         task_id="submit_spark_streaming_job",
-        kafka_topic="product_view",
-        postgres_host="172.18.0.1",
+        kafka_topic=KAFKA_TOPIC,
+        project_path=PROJECT_PATH,
+        kafka_bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+        postgres_host=PG_HOST,
+        postgres_port=PG_PORT,
+        postgres_db=PG_DB,
+        postgres_user=PG_USER,
+        postgres_password=PG_PASSWORD,
     )
 
     post_status = PythonOperator(

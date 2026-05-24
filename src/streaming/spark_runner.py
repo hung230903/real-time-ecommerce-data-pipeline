@@ -14,7 +14,7 @@ from config.base import (
     KAFKA_SASL_JAAS_CONFIG,
 )
 from config.logger import setup_logger
-from src.processing.ip_enricher import get_loc_info
+from src.processing.ip_enricher import get_loc_info  # noqa: F401 – used in ip_loc_enricher UDF lambda
 from src.schema.schemas import EVENT_SCHEMA, LOCATION_SCHEMA
 from src.streaming.spark_streaming import process_batch
 

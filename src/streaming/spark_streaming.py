@@ -14,22 +14,7 @@ from pyspark.sql.types import StringType, StructField, StructType
 
 import config.base as settings
 from config.logger import setup_logger
-from src.load.db_upserter import (
-    upsert_customer_dimension,
-    upsert_date_dimension,
-    upsert_device_dimension,
-    upsert_location_dimension,
-    upsert_product_dimension,
-    upsert_store_dimension,
-)
-from src.processing.data_transformer import (
-    browser_transformer,
-    customer_transformer,
-    date_transformer,
-    device_transformer,
-    os_transformer,
-    store_transformer,
-)
+from src.load.db_upserter import upsert_dimensions_partition
 
 logger = setup_logger("SparkStreaming")
 
@@ -43,10 +28,44 @@ DIM_SCHEMA = StructType(
 
 
 ######################################################################
-# 1. DIMENSION UPSERTS  (driver-side, single PG connection)
+# 1. DIMENSION UPSERTS  (Fix #1 – worker-side via foreachPartition)
 ######################################################################
-def upsert_all_dimensions(rows):
-    conn = psycopg2.connect(
+def upsert_all_dimensions(batch_df):
+    """
+    Push dimension upserts down to Spark workers via foreachPartition.
+
+    Each partition opens its own Postgres connection, deduplicates locally,
+    executes all INSERTs, and commits exactly once – no data is pulled back
+    to the driver (no collect()), and there are no per-row commits.
+    """
+    dim_df = batch_df.select(
+        "product_id",
+        "store_id",
+        col("loc_info.location_id").alias("location_id"),
+        col("loc_info.country_name").alias("country_name"),
+        col("loc_info.country_short").alias("country_short"),
+        col("loc_info.region_name").alias("region_name"),
+        col("loc_info.city_name").alias("city_name"),
+        "device_id",
+        "email_address",
+        "user_id_db",
+        "user_agent",
+        "resolution",
+        "time_stamp",
+    )
+
+    # Deduplicate on the Spark side before shipping to workers to further
+    # reduce redundant DB calls across partitions.
+    dim_df = dim_df.distinct()
+
+    dim_df.foreachPartition(upsert_dimensions_partition)
+
+
+######################################################################
+# 2. LOAD DIMENSION MAPS from DB (driver queries PG for surrogate keys)
+######################################################################
+def _pg_conn():
+    return psycopg2.connect(
         host=settings.POSTGRES_HOST,
         port=settings.POSTGRES_PORT,
         database=settings.POSTGRES_DB,
@@ -54,102 +73,94 @@ def upsert_all_dimensions(rows):
         password=settings.POSTGRES_PASSWORD,
     )
 
-    product_map, store_map, location_map = {}, {}, {}
-    customer_map, date_map, device_map = {}, {}, {}
 
-    for row in rows:
-        # Transform and upsert PRODUCT
-        if row.product_id and row.product_id not in product_map:
-            logger.info("UPSERTING PRODUCT DIMENSION")
-            pk = upsert_product_dimension(conn, "dim_product", (row.product_id,))
-            product_map[row.product_id] = pk
+def load_dimension_maps(batch_df):
+    """
+    After workers have upserted all dimensions, fetch the surrogate-key
+    maps from Postgres on the driver for the *values present in this batch*.
 
-        # Transform and upsert STORE
-        if row.store_id and row.store_id not in store_map:
-            store_name = store_transformer(row.store_id)
-            store_tuple = (row.store_id, store_name)
-            logger.info("UPSERTING STORE DIMENSION")
-            sk = upsert_store_dimension(conn, "dim_store", store_tuple)
-            store_map[row.store_id] = sk
+    This keeps the driver query small (WHERE IN <batch values>) instead of
+    scanning entire dimension tables.
+    """
+    # Collect only the natural keys – these are tiny sets compared to the
+    # full row payloads, so collect() here is safe.
+    product_ids = [
+        r.product_id
+        for r in batch_df.select("product_id").distinct().collect()
+        if r.product_id
+    ]
+    store_ids = [
+        r.store_id
+        for r in batch_df.select("store_id").distinct().collect()
+        if r.store_id
+    ]
+    location_ids = [
+        r.location_id
+        for r in batch_df.select(col("loc_info.location_id").alias("location_id"))
+        .distinct()
+        .collect()
+        if r.location_id
+    ]
+    device_ids = [
+        r.device_id
+        for r in batch_df.select("device_id").distinct().collect()
+        if r.device_id
+    ]
 
-        # Transform and upsert LOCATION
-        if row.location_id and row.location_id not in location_map:
-            loc_tuple = (
-                row.location_id,
-                row.country_name,
-                row.country_short,
-                row.region_name,
-                row.city_name,
-            )
-            logger.info("UPSERTING LOCATION DIMENSION")
-            lk = upsert_location_dimension(conn, "dim_location", loc_tuple)
-            location_map[row.location_id] = lk
+    conn = _pg_conn()
+    cur = conn.cursor()
 
-        # Transform and upsert CUSTOMER
-        if row.device_id or row.email_address or row.user_id_db:
-            customer_data = customer_transformer(
-                customer_id=row.device_id,
-                email_address=row.email_address,
-                user_id_db=row.user_id_db,
-            )
+    def fetch_map(query, ids):
+        if not ids:
+            return {}
+        cur.execute(query, (ids,))
+        return {row[0]: str(row[1]) for row in cur.fetchall()}
 
-            if customer_data["customer_id"] not in customer_map:
-                customer_tuple = (
-                    customer_data["customer_id"],
-                    customer_data["email_address"],
-                    customer_data["user_id_db"],
-                )
-                logger.info("UPSERTING CUSTOMER DIMENSION")
-                ck = upsert_customer_dimension(conn, "dim_customer", customer_tuple)
-                customer_map[customer_data["customer_id"]] = ck
+    product_map = fetch_map(
+        "SELECT product_id, product_id FROM dim_product WHERE product_id = ANY(%s)",
+        product_ids,
+    )
+    store_map = fetch_map(
+        "SELECT store_id, store_id FROM dim_store WHERE store_id = ANY(%s)",
+        store_ids,
+    )
+    location_map = fetch_map(
+        "SELECT location_id, location_id FROM dim_location WHERE location_id = ANY(%s)",
+        location_ids,
+    )
 
-        # Transform and upsert DEVICE
-        if row.user_agent or row.resolution:
-            device_data = device_transformer(row.user_agent, row.resolution)
-            if device_data["device_id"] not in device_map:
-                browser = browser_transformer(row.user_agent)
-                os_name = os_transformer(row.user_agent)
-                device_tuple = (
-                    device_data["device_id"],
-                    device_data["user_agent"],
-                    device_data["resolution"],
-                    os_name,
-                    browser,
-                )
-                logger.info("UPSERTING DEVICE DIMENSION")
-                dk = upsert_device_dimension(conn, "dim_device", device_tuple)
-                device_map[device_data["device_id"]] = dk
+    # Customer map: keyed by customer_id (= device_id after transformation)
+    if device_ids:
+        cur.execute(
+            "SELECT customer_id, customer_id FROM dim_customer WHERE customer_id = ANY(%s)",
+            (device_ids,),
+        )
+        customer_map = {row[0]: str(row[1]) for row in cur.fetchall()}
+    else:
+        customer_map = {}
 
-        # Transform and upsert DATE
-        if row.time_stamp:
-            date_data = date_transformer(row.time_stamp)
+    # Device map: keyed by device_id (SHA-256 hash)
+    if device_ids:
+        cur.execute(
+            "SELECT device_id, device_id FROM dim_device WHERE device_id = ANY(%s)",
+            (device_ids,),
+        )
+        device_map = {row[0]: str(row[1]) for row in cur.fetchall()}
+    else:
+        device_map = {}
 
-            if date_data:
-                date_id = date_data["date_id"]
-                if date_id not in date_map:
-                    date_tuple = (
-                        date_id,
-                        date_data["full_date"],
-                        date_data["date_of_week"],
-                        date_data["date_of_week_short"],
-                        date_data["is_weekday_or_weekend"],
-                        date_data["day_of_month"],
-                        date_data["day_of_year"],
-                        date_data["week_of_year"],
-                        date_data["quarter_number"],
-                        date_data["year_number"],
-                        date_data["year_month"],
-                    )
-                    logger.info("UPSERTING DATE DIMENSION")
-                    upsert_date_dimension(conn, "dim_date", date_tuple)
-                    date_map[date_id] = date_id
+    # Date map: keyed by date_id (YYYYMMDD int as string)
+    cur.execute("SELECT date_id, date_id FROM dim_date")
+    date_map = {str(row[0]): str(row[1]) for row in cur.fetchall()}
 
+    cur.close()
     conn.close()
+
     return product_map, store_map, location_map, customer_map, date_map, device_map
 
 
 ######################################################################
-# 2. ENRICH BATCH (join batch_df with dimension maps → create fact_id)
+# 3. ENRICH BATCH (join batch_df with dimension maps → create fact_id)
 ######################################################################
 def create_lookup_df(spark, mapping, id_col, key_col):
     """Dict → 2-column Spark DataFrame to join"""
@@ -238,7 +249,7 @@ def build_enriched_df(
 
 
 ######################################################################
-# 3. FACT UPSERT
+# 4. FACT UPSERT
 ######################################################################
 def write_fact_table(enriched_df):
     pg_host = settings.POSTGRES_HOST
@@ -310,32 +321,13 @@ def process_batch(batch_df, batch_id):
     count_raw = batch_df.count()
     logger.info(f"Batch {batch_id} has {count_raw} raw events")
 
-    # Collect rows & upsert dimensions
-    rows = batch_df.select(
-        "collection",
-        "current_url",
-        "referrer_url",
-        "product_id",
-        "store_id",
-        "user_agent",
-        "user_id_db",
-        "resolution",
-        "time_stamp",
-        "email_address",
-        "device_id",
-        "loc_info.location_id",
-        "loc_info.country_name",
-        "loc_info.country_short",
-        "loc_info.region_name",
-        "loc_info.city_name",
-    ).collect()
+    # Fix #1: push dimension upserts to workers via foreachPartition –
+    # no collect(), no driver OOM, fully distributed.
+    upsert_all_dimensions(batch_df)
 
-    logger.info(
-        f"Collected {len(rows)} rows from batch {batch_id} for dimension upserts."
-    )
-
+    # Fetch surrogate-key maps from PG on the driver (key-only, small payload)
     product_map, store_map, location_map, customer_map, date_map, device_map = (
-        upsert_all_dimensions(rows)
+        load_dimension_maps(batch_df)
     )
 
     # Enrich batch with dimension keys

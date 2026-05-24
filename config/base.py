@@ -1,11 +1,12 @@
 import os
+
 from dotenv import load_dotenv
 
 # Load .env file
 load_dotenv()
 
 # ------------------------------------------------------------------ #
-# LOCAL Kafka — dùng cho Spark Structured Streaming                   #
+# LOCAL Kafka — dùng cho Spark Structured Streaming                  #
 # ------------------------------------------------------------------ #
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS")
 KAFKA_TOPIC = os.getenv("KAFKA_TOPIC")
@@ -40,7 +41,7 @@ SERVER_AUTO_OFFSET_RESET = os.getenv("SERVER_AUTO_OFFSET_RESET", "earliest")
 # JAAS config string dùng cho Spark Structured Streaming (local Kafka).
 if KAFKA_USERNAME and KAFKA_PASSWORD:
     KAFKA_SASL_JAAS_CONFIG = (
-        f'org.apache.kafka.common.security.plain.PlainLoginModule '
+        f"org.apache.kafka.common.security.plain.PlainLoginModule "
         f'required username="{KAFKA_USERNAME}" password="{KAFKA_PASSWORD}";'
     )
 else:
@@ -88,4 +89,6 @@ sqlalchemy_url = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HO
 
 # Spark
 CHECKPOINT_PATH = os.getenv("CHECKPOINT_PATH", "/tmp/spark_checkpoints/user_activity")
-IP2LOCATION_DB_PATH = os.getenv("IP2LOCATION_DB_PATH", "/spark/99-project/IP2LOCATION-LITE-DB11.BIN")
+IP2LOCATION_DB_PATH = os.getenv(
+    "IP2LOCATION_DB_PATH", "/spark/99-project/IP2LOCATION-LITE-DB11.BIN"
+)

@@ -1,15 +1,48 @@
 """
 Kafka Producer Control DAG.
 
-Manages the lifecycle of the Kafka producer script that forwards data 
+Manages the lifecycle of the Kafka producer script that forwards data
 from the remote server to the local Kafka cluster.
+
+Configuration is loaded from Airflow Variables and Connections – no
+credentials are hardcoded in this file.
+
+Required Airflow setup (UI → Admin):
+  Variables:
+    - project_path        : absolute path to the project on the host
+                            (default: /app)
+  Connections (conn_id = "local_kafka_conn"):
+    - Conn Type : Generic (or HTTP)
+    - Host      : kafka-0:9092,kafka-1:9092,kafka-2:9092
+    - Login     : <sasl username>
+    - Password  : <sasl password>
+    - Extra     : {"topic": "product_view",
+                   "security_protocol": "SASL_PLAINTEXT",
+                   "sasl_mechanism": "PLAIN"}
 """
 
+import json
 from datetime import datetime, timedelta
+
 from airflow import DAG
-from airflow.providers.docker.operators.docker import DockerOperator
+from airflow.hooks.base import BaseHook
 from airflow.models import Variable
+from airflow.providers.docker.operators.docker import DockerOperator
 from docker.types import Mount
+
+# ─── Configuration (resolved at parse time from Airflow store) ────────
+
+PROJECT_PATH = Variable.get("project_path", default_var="/app")
+
+_kafka_conn = BaseHook.get_connection("local_kafka_conn")
+_kafka_extra = json.loads(_kafka_conn.extra or "{}")
+
+LOCAL_BOOTSTRAP_SERVERS = _kafka_conn.host or "kafka-0:9092,kafka-1:9092,kafka-2:9092"
+LOCAL_SASL_USERNAME = _kafka_conn.login
+LOCAL_SASL_PASSWORD = _kafka_conn.password
+LOCAL_TOPIC = _kafka_extra.get("topic", "product_view")
+LOCAL_SECURITY_PROTOCOL = _kafka_extra.get("security_protocol", "SASL_PLAINTEXT")
+LOCAL_SASL_MECHANISM = _kafka_extra.get("sasl_mechanism", "PLAIN")
 
 # ─── Default Arguments ────────────────────────────────────────────────
 
@@ -21,8 +54,6 @@ default_args = {
     "retries": 3,
     "retry_delay": timedelta(minutes=1),
 }
-
-PROJECT_PATH = "/home/hung/Documents/PycharmProject/glamira_realtime_pipeline"
 
 # ─── DAG Definition ──────────────────────────────────────────────────
 
@@ -36,7 +67,6 @@ with DAG(
     tags=["kafka", "producer", "ingestion"],
 ) as dag:
 
-    # Using DockerOperator to run the producer
     run_producer = DockerOperator(
         task_id="run_kafka_producer",
         image="python:3.11-slim",
@@ -57,13 +87,13 @@ with DAG(
             Mount(source=PROJECT_PATH, target="/app", type="bind"),
         ],
         environment={
-            "LOCAL_BOOTSTRAP_SERVERS": "kafka-0:9092,kafka-1:9092,kafka-2:9092",
-            "LOCAL_TOPIC": "product_view",
-            "LOCAL_SECURITY_PROTOCOL": "SASL_PLAINTEXT",
-            "LOCAL_SASL_MECHANISM": "PLAIN",
-            "LOCAL_SASL_USERNAME": "admin",
-            "LOCAL_SASL_PASSWORD": "@2025",
-            "PYTHONUNBUFFERED": "1"
+            "LOCAL_BOOTSTRAP_SERVERS": LOCAL_BOOTSTRAP_SERVERS,
+            "LOCAL_TOPIC": LOCAL_TOPIC,
+            "LOCAL_SECURITY_PROTOCOL": LOCAL_SECURITY_PROTOCOL,
+            "LOCAL_SASL_MECHANISM": LOCAL_SASL_MECHANISM,
+            "LOCAL_SASL_USERNAME": LOCAL_SASL_USERNAME,
+            "LOCAL_SASL_PASSWORD": LOCAL_SASL_PASSWORD,
+            "PYTHONUNBUFFERED": "1",
         },
     )
 

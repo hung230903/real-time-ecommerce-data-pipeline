@@ -69,13 +69,25 @@ def date_transformer(time_stamp):
     }
 
 
+def parse_user_agent(ua_string):
+    """Parse User-Agent once and return (browser_family, os_family).
+
+    This avoids the cost of parsing the same UA string twice when both
+    browser and OS information are needed.
+    """
+    if not ua_string:
+        return "Unknown", "Unknown"
+    parsed = parse(ua_string)
+    return parsed.browser.family, parsed.os.family
+
+
 def browser_transformer(browser):
-    if browser is None: return "Unknown"
-    user_agent = parse(browser)
-    return user_agent.browser.family
+    """Return browser family. Delegates to parse_user_agent."""
+    browser_name, _ = parse_user_agent(browser)
+    return browser_name
 
 
 def os_transformer(os):
-    if os is None: return "Unknown"
-    user_agent = parse(os)
-    return user_agent.os.family
+    """Return OS family. Delegates to parse_user_agent."""
+    _, os_name = parse_user_agent(os)
+    return os_name
