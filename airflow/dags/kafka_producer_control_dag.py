@@ -66,19 +66,19 @@ with DAG(
     catchup=False,
     tags=["kafka", "producer", "ingestion"],
 ) as dag:
-
     run_producer = DockerOperator(
         task_id="run_kafka_producer",
         image="python:3.11-slim",
         auto_remove="force",
         mount_tmp_dir=False,
         command=[
-            "bash", "-c",
+            "bash",
+            "-c",
             "apt-get update && apt-get install -y ca-certificates && "
             "pip install --trusted-host pypi.org --trusted-host files.pythonhosted.org "
             "confluent-kafka python-dotenv && "
             "export PYTHONPATH=$PYTHONPATH:/app && "
-            "python -u /app/src/kafka/producer.py"
+            "python -u /app/src/kafka/producer.py",
         ],
         docker_url="unix://var/run/docker.sock",
         network_mode="streaming-network",

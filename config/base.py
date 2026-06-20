@@ -8,6 +8,7 @@ load_dotenv()
 # ------------------------------------------------------------------ #
 # LOCAL Kafka — dùng cho Spark Structured Streaming                  #
 # ------------------------------------------------------------------ #
+COMMIT_BATCH = 100
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS")
 KAFKA_TOPIC = os.getenv("KAFKA_TOPIC")
 KAFKA_SASL_MECHANISM = os.getenv("KAFKA_SASL_MECHANISM")
@@ -48,34 +49,36 @@ else:
     KAFKA_SASL_JAAS_CONFIG = os.getenv("KAFKA_SASL_JAAS_CONFIG", "")
 
 # Confluent-kafka Consumer config để đọc từ Kafka Server (remote).
-server_consumer_config = {
+SERVER_CONSUMER_CONFIG = {
     "bootstrap.servers": SERVER_BOOTSTRAP_SERVERS,
     "group.id": SERVER_GROUP_ID,
     "auto.offset.reset": SERVER_AUTO_OFFSET_RESET,
     "enable.auto.commit": False,
 }
+
 if SERVER_SECURITY_PROTOCOL:
-    server_consumer_config["security.protocol"] = SERVER_SECURITY_PROTOCOL
+    SERVER_CONSUMER_CONFIG["security.protocol"] = SERVER_SECURITY_PROTOCOL
 if SERVER_SASL_MECHANISM:
-    server_consumer_config["sasl.mechanism"] = SERVER_SASL_MECHANISM
+    SERVER_CONSUMER_CONFIG["sasl.mechanism"] = SERVER_SASL_MECHANISM
 if SERVER_SASL_USERNAME:
-    server_consumer_config["sasl.username"] = SERVER_SASL_USERNAME
+    SERVER_CONSUMER_CONFIG["sasl.username"] = SERVER_SASL_USERNAME
 if SERVER_SASL_PASSWORD:
-    server_consumer_config["sasl.password"] = SERVER_SASL_PASSWORD
+    SERVER_CONSUMER_CONFIG["sasl.password"] = SERVER_SASL_PASSWORD
 
 # Confluent-kafka Producer config để produce sang Kafka Local.
-local_producer_config = {
+LOCAL_PRODUCER_CONFIG = {
     "bootstrap.servers": LOCAL_BOOTSTRAP_SERVERS,
     "acks": LOCAL_PRODUCER_ACKS,
 }
+
 if LOCAL_SECURITY_PROTOCOL:
-    local_producer_config["security.protocol"] = LOCAL_SECURITY_PROTOCOL
+    LOCAL_PRODUCER_CONFIG["security.protocol"] = LOCAL_SECURITY_PROTOCOL
 if LOCAL_SASL_MECHANISM:
-    local_producer_config["sasl.mechanism"] = LOCAL_SASL_MECHANISM
+    LOCAL_PRODUCER_CONFIG["sasl.mechanism"] = LOCAL_SASL_MECHANISM
 if LOCAL_SASL_USERNAME:
-    local_producer_config["sasl.username"] = LOCAL_SASL_USERNAME
+    LOCAL_PRODUCER_CONFIG["sasl.username"] = LOCAL_SASL_USERNAME
 if LOCAL_SASL_PASSWORD:
-    local_producer_config["sasl.password"] = LOCAL_SASL_PASSWORD
+    LOCAL_PRODUCER_CONFIG["sasl.password"] = LOCAL_SASL_PASSWORD
 
 # Postgres
 POSTGRES_DB = os.getenv("POSTGRES_DB")

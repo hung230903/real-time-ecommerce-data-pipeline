@@ -1,20 +1,20 @@
 """
 Kafka Remote Health Check DAG.
 
-Performs a network-level connectivity check (socket ping) to the 
+Performs a network-level connectivity check (socket ping) to the
 Remote Kafka source cluster to ensure the data source is available.
 
 Schedule: Every 5 minutes.
 """
 
-from datetime import datetime, timedelta
-from airflow import DAG
-from airflow.operators.python import BranchPythonOperator, PythonOperator
-from airflow.operators.empty import EmptyOperator
-from airflow.models import Variable, TaskInstance
+import re
 import socket
 from contextlib import closing
-import re
+from datetime import datetime, timedelta
+
+from airflow import DAG
+from airflow.models import TaskInstance, Variable
+from airflow.operators.python import BranchPythonOperator, PythonOperator
 
 # ─── Default Arguments ────────────────────────────────────────────────
 
@@ -29,6 +29,7 @@ default_args = {
 
 # ─── Task Callables ──────────────────────────────────────────────────
 
+
 def _health_check(ti: TaskInstance, **kwargs):
     """Pings the remote Kafka servers and returns health status."""
     remote_servers = Variable.get("SERVER_BOOTSTRAP_SERVERS", default_var=None)
@@ -36,20 +37,22 @@ def _health_check(ti: TaskInstance, **kwargs):
         print("No SERVER_BOOTSTRAP_SERVERS configured.")
         ti.xcom_push(key="is_healthy", value=False)
         return False
-        
+
     # Clean up accidental "Val (Value): " prefix from Airflow UI
-    remote_servers = re.sub(r'^Val\s*\(Value\):\s*', '', remote_servers, flags=re.IGNORECASE).strip()
-    
+    remote_servers = re.sub(
+        r"^Val\s*\(Value\):\s*", "", remote_servers, flags=re.IGNORECASE
+    ).strip()
+
     is_healthy = False
-    for server in remote_servers.split(','):
+    for server in remote_servers.split(","):
         try:
             server = server.strip()
             if not server:
                 continue
-            host_port = server.split(':')
+            host_port = server.split(":")
             host = host_port[0].strip()
             port = int(host_port[1].strip()) if len(host_port) > 1 else 9092
-            
+
             print(f"Checking {host}:{port}...")
             with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
                 sock.settimeout(10)
@@ -60,23 +63,27 @@ def _health_check(ti: TaskInstance, **kwargs):
         except Exception as e:
             print(f"Failed to check {server}: {e}")
             continue
-            
+
     if not is_healthy:
         print("❌ None of the remote brokers are reachable.")
-        
+
     ti.xcom_push(key="is_healthy", value=is_healthy)
     return is_healthy
+
 
 def _branch(ti: TaskInstance, **kwargs):
     """Branch based on the health check result."""
     is_healthy = ti.xcom_pull(task_ids="health_check", key="is_healthy")
     return "server_is_up" if is_healthy else "server_is_down"
 
+
 def _server_up_action():
     print("🚀 Remote Kafka cluster is UP and reachable. Pipeline is healthy.")
 
+
 def _server_down_action():
     print("⚠️  Remote Kafka cluster is DOWN! Needs immediate attention.")
+
 
 # ─── DAG Definition ──────────────────────────────────────────────────
 
@@ -89,7 +96,6 @@ with DAG(
     catchup=False,
     tags=["monitoring", "kafka", "remote"],
 ) as dag:
-
     health_check = PythonOperator(
         task_id="health_check",
         python_callable=_health_check,

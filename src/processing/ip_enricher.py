@@ -1,6 +1,7 @@
-import os
-import logging
 import hashlib
+import logging
+import os
+
 import IP2Location
 
 # Lazy-loaded singleton: the IP2Location database is loaded once per worker
@@ -45,17 +46,17 @@ def get_loc_info(ip_address, db_path):
             city = info.city if info.city else ""
 
             loc_string = f"{country}|{region}|{city}"
-            loc_id = hashlib.md5(loc_string.encode('utf-8')).hexdigest()
+            loc_id = hashlib.md5(loc_string.encode("utf-8")).hexdigest()
 
             return (
                 loc_id,
                 info.country_long,
                 info.country_short,
                 info.region,
-                info.city
+                info.city,
             )
 
-    except Exception as e:
+    except Exception:
         logging.error(ip_address, "IS NOT FOUND")
         return None
     return None

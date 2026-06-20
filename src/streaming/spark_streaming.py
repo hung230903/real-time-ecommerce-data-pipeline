@@ -89,11 +89,13 @@ def load_dimension_maps(batch_df):
         for r in batch_df.select("product_id").distinct().collect()
         if r.product_id
     ]
+
     store_ids = [
         r.store_id
         for r in batch_df.select("store_id").distinct().collect()
         if r.store_id
     ]
+
     location_ids = [
         r.location_id
         for r in batch_df.select(col("loc_info.location_id").alias("location_id"))
@@ -101,6 +103,7 @@ def load_dimension_maps(batch_df):
         .collect()
         if r.location_id
     ]
+
     device_ids = [
         r.device_id
         for r in batch_df.select("device_id").distinct().collect()
@@ -117,22 +120,22 @@ def load_dimension_maps(batch_df):
         return {row[0]: str(row[1]) for row in cur.fetchall()}
 
     product_map = fetch_map(
-        "SELECT product_id, product_id FROM dim_product WHERE product_id = ANY(%s)",
+        "SELECT product_id, product_key FROM dim_product WHERE product_id = ANY(%s)",
         product_ids,
     )
     store_map = fetch_map(
-        "SELECT store_id, store_id FROM dim_store WHERE store_id = ANY(%s)",
+        "SELECT store_id, store_key FROM dim_store WHERE store_id = ANY(%s)",
         store_ids,
     )
     location_map = fetch_map(
-        "SELECT location_id, location_id FROM dim_location WHERE location_id = ANY(%s)",
+        "SELECT location_id, location_key FROM dim_location WHERE location_id = ANY(%s)",
         location_ids,
     )
 
     # Customer map: keyed by customer_id (= device_id after transformation)
     if device_ids:
         cur.execute(
-            "SELECT customer_id, customer_id FROM dim_customer WHERE customer_id = ANY(%s)",
+            "SELECT customer_id, customer_key FROM dim_customer WHERE customer_id = ANY(%s)",
             (device_ids,),
         )
         customer_map = {row[0]: str(row[1]) for row in cur.fetchall()}
@@ -142,7 +145,7 @@ def load_dimension_maps(batch_df):
     # Device map: keyed by device_id (SHA-256 hash)
     if device_ids:
         cur.execute(
-            "SELECT device_id, device_id FROM dim_device WHERE device_id = ANY(%s)",
+            "SELECT device_id, device_key FROM dim_device WHERE device_id = ANY(%s)",
             (device_ids,),
         )
         device_map = {row[0]: str(row[1]) for row in cur.fetchall()}
@@ -150,7 +153,7 @@ def load_dimension_maps(batch_df):
         device_map = {}
 
     # Date map: keyed by date_id (YYYYMMDD int as string)
-    cur.execute("SELECT date_id, date_id FROM dim_date")
+    cur.execute("SELECT date_key, date_id FROM dim_date")
     date_map = {str(row[0]): str(row[1]) for row in cur.fetchall()}
 
     cur.close()
@@ -191,13 +194,7 @@ def build_enriched_df(
     loc_df = create_lookup_df(spark, location_map, "map_loc_id", "loc_key")
     cus_df = create_lookup_df(spark, customer_map, "map_cus_id", "cus_key")
     dev_df = create_lookup_df(spark, device_map, "map_dev_id", "dev_key")
-
-    date_data = [(str(k), str(v) if v else None) for k, v in date_map.items()]
-    date_df = (
-        spark.createDataFrame(date_data, schema=DIM_SCHEMA)
-        .withColumnRenamed("map_id", "date_id_str")
-        .withColumnRenamed("map_key", "date_key")
-    )
+    date_df = create_lookup_df(spark, date_map, "date_id_str", "date_key")
 
     enriched_df = (
         batch_df.join(prod_df, batch_df.product_id == prod_df.map_prod_id, "left")
@@ -232,11 +229,11 @@ def build_enriched_df(
         )
         .select(
             col("fact_id"),
-            col("product_key").alias("product_id"),
-            col("store_key").alias("store_id"),
-            col("loc_key").alias("location_id"),
-            col("cus_key").alias("customer_id"),
-            col("dev_key").alias("device_id"),
+            col("product_key").cast("integer").alias("product_key"),
+            col("store_key").cast("integer").alias("store_key"),
+            col("loc_key").cast("integer").alias("location_key"),
+            col("cus_key").cast("integer").alias("customer_key"),
+            col("dev_key").cast("integer").alias("device_key"),
             col("date_key").cast("integer").alias("date_id"),
             col("ip").alias("ip_address"),
             col("collection"),
@@ -263,10 +260,11 @@ def write_fact_table(enriched_df):
         from psycopg2.extras import execute_batch
 
         sql = """
-              INSERT INTO fact_product_views (fact_id, product_id, store_id, location_id,
-                                              customer_id, device_id, date_id, ip_address, time_stamp,
+              INSERT INTO fact_product_views (fact_id, product_key, store_key, location_key,
+                                              customer_key, device_key, date_id, ip_address, time_stamp,
                                               collection, current_url, referrer_url)
-              VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) ON CONFLICT (fact_id) DO NOTHING
+              VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) 
+              ON CONFLICT (fact_id) DO NOTHING
               """
 
         conn = _pg.connect(
@@ -281,11 +279,11 @@ def write_fact_table(enriched_df):
         batch = [
             (
                 r.fact_id,
-                r.product_id,
-                r.store_id,
-                r.location_id,
-                r.customer_id,
-                r.device_id,
+                r.product_key,
+                r.store_key,
+                r.location_key,
+                r.customer_key,
+                r.device_key,
                 r.date_id,
                 r.ip_address,
                 r.time_stamp,
@@ -316,6 +314,8 @@ def process_batch(batch_df, batch_id):
         return
 
     logger.info(f"--- Processing batch {batch_id} ---")
+
+    # Add batch_df to RAM
     batch_df.cache()
 
     count_raw = batch_df.count()
@@ -347,5 +347,6 @@ def process_batch(batch_df, batch_id):
     logger.info(f"Upserting {count_enriched} rows into fact_product_views")
     write_fact_table(enriched_df)
 
+    # Remove batch_df from RAM after processed
     batch_df.unpersist()
     logger.info(f"Batch {batch_id} completed.")

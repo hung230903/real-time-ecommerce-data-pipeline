@@ -159,6 +159,16 @@ indicators for alert descriptions, and timestamps
 | `SERVER_BOOTSTRAP_SERVERS` | Remote Kafka Bootstrap (IP:Port,...)    | From Infrastructure Admin         |
 | `TELEGRAM_BOT_TOKEN`       | Bot API token from @BotFather           | Telegram → @BotFather → `/newbot` |
 | `TELEGRAM_CHAT_ID`         | Target chat ID for notifications        | Telegram → @GetsMyIDBot           |
+| `project_path`             | Absolute path to project on host        | Run `pwd` in the project root     |
+| `kafka_target_topic`       | Default local Kafka topic               | e.g., `product_view`              |
+
+**Required Airflow Connections** (set via Admin → Connections in the Airflow UI):
+
+| Conn Id              | Conn Type | Host / JSON / Extra Details                               | Description                                |
+|----------------------|-----------|-----------------------------------------------------------|--------------------------------------------|
+| `postgres_streaming` | Postgres  | Host: `172.18.0.1` (or local IP), DB: `spark_streaming_schema` | Connects to PostgreSQL Data Warehouse      |
+| `local_kafka_conn`   | Kafka     | Host: `kafka-0:9092,kafka-1:9092...`, Extra: `{"topic": "..."}` | Connects Airflow sensors to local Kafka    |
+| `kafka_default`      | Kafka     | Host: Remote bootstrap servers, Extra: SASL configurations | Connects to the upstream Kafka server      |
 
 ### DAG: `kafka_local_monitoring`
 

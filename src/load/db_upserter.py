@@ -1,7 +1,6 @@
 import logging
 
 import psycopg2
-from psycopg2.extras import execute_batch
 
 import config.base as settings
 from src.processing.data_transformer import (
@@ -12,18 +11,18 @@ from src.processing.data_transformer import (
     store_transformer,
 )
 
-
 # ---------------------------------------------------------------------------
 # Low-level upsert helpers – execute SQL but do NOT commit.
 # The caller is responsible for committing (or rolling back) the transaction.
 # ---------------------------------------------------------------------------
+
 
 def upsert_location_dimension(cur, values):
     sql = """
           INSERT INTO dim_location (location_id, country_name, country_short, region_name, city_name)
           VALUES (%s, %s, %s, %s, %s) ON CONFLICT (location_id) DO
           UPDATE SET location_id = EXCLUDED.location_id
-              RETURNING location_id;
+              RETURNING location_key;
           """
     cur.execute(sql, values)
     result = cur.fetchone()
@@ -35,7 +34,7 @@ def upsert_product_dimension(cur, values):
           INSERT INTO dim_product (product_id)
           VALUES (%s) ON CONFLICT (product_id) DO
           UPDATE SET product_id = EXCLUDED.product_id
-              RETURNING product_id;
+              RETURNING product_key;
           """
     cur.execute(sql, values)
     result = cur.fetchone()
@@ -46,7 +45,7 @@ def upsert_store_dimension(cur, values):
     sql = """
           INSERT INTO dim_store (store_id, store_name)
           VALUES (%s, %s) ON CONFLICT (store_id) DO
-          UPDATE SET store_id = EXCLUDED.store_id RETURNING store_id;
+          UPDATE SET store_id = EXCLUDED.store_id RETURNING store_key;
           """
     cur.execute(sql, values)
     result = cur.fetchone()
@@ -69,7 +68,7 @@ def upsert_date_dimension(cur, values):
 def upsert_device_dimension(cur, values):
     sql = """
           INSERT INTO dim_device (device_id, user_agent, resolution, os, browser)
-          VALUES (%s, %s, %s, %s, %s) ON CONFLICT (device_id) DO NOTHING RETURNING device_id;
+          VALUES (%s, %s, %s, %s, %s) ON CONFLICT (device_id) DO NOTHING RETURNING device_key;
           """
     cur.execute(sql, values)
     result = cur.fetchone()
@@ -82,7 +81,7 @@ def upsert_customer_dimension(cur, values):
           VALUES (%s, %s, %s) ON CONFLICT (customer_id) DO
           UPDATE SET email_address = EXCLUDED.email_address,
                      user_id_db    = EXCLUDED.user_id_db
-              RETURNING customer_id;
+              RETURNING customer_key;
           """
     cur.execute(sql, values)
     result = cur.fetchone()
@@ -97,6 +96,7 @@ def upsert_customer_dimension(cur, values):
 # at the end – eliminating both the driver-side collect() and the per-row
 # commit overhead.
 # ---------------------------------------------------------------------------
+
 
 def upsert_dimensions_partition(rows):
     """

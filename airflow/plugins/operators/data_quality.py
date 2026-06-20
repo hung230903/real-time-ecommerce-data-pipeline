@@ -8,13 +8,14 @@ from typing import Any, Dict, List
 
 from airflow.models import BaseOperator
 from airflow.utils.context import Context
+
 from plugins.hooks.postgres_hook_ext import PostgresExtendedHook
 
 
 class DataQualityOperator(BaseOperator):
     """
     Operator that runs SQL checks against a PostgreSQL database.
-    
+
     :param sql_checks: List of dicts with 'sql' and 'expected_result' keys.
     :param postgres_conn_id: Connection ID to use.
     """
@@ -22,10 +23,10 @@ class DataQualityOperator(BaseOperator):
     ui_color = "#f0f8ff"
 
     def __init__(
-            self,
-            sql_checks: List[Dict[str, Any]],
-            postgres_conn_id: str = "postgres_streaming",
-            **kwargs
+        self,
+        sql_checks: List[Dict[str, Any]],
+        postgres_conn_id: str = "postgres_streaming",
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.sql_checks = sql_checks
@@ -39,9 +40,9 @@ class DataQualityOperator(BaseOperator):
         failed_checks = []
 
         for check in self.sql_checks:
-            sql = check.get('sql')
-            expected = check.get('expected_result')
-            check_name = check.get('name', sql)
+            sql = check.get("sql")
+            expected = check.get("expected_result")
+            check_name = check.get("name", sql)
 
             self.log.info(f"Running check: {check_name}")
 
@@ -50,7 +51,8 @@ class DataQualityOperator(BaseOperator):
 
                 if not records or records[0] != expected:
                     failed_checks.append(
-                        f"Check failed: {check_name}. Expected {expected}, got {records[0] if records else 'None'}")
+                        f"Check failed: {check_name}. Expected {expected}, got {records[0] if records else 'None'}"
+                    )
                     self.log.error(f"❌ Check FAILED: {check_name}")
                 else:
                     self.log.info(f"✅ Check PASSED: {check_name}")
@@ -60,7 +62,11 @@ class DataQualityOperator(BaseOperator):
                 self.log.error(f"💥 SYSTEM ERROR during check: {check_name}")
 
         if failed_checks:
-            self.log.error(f"Data Quality checks completed with {len(failed_checks)} failure(s).")
-            raise ValueError(f"Data Quality validation failed:\n" + "\n".join(failed_checks))
+            self.log.error(
+                f"Data Quality checks completed with {len(failed_checks)} failure(s)."
+            )
+            raise ValueError(
+                "Data Quality validation failed:\n" + "\n".join(failed_checks)
+            )
 
         self.log.info("🏆 All Data Quality checks PASSED successfully!")

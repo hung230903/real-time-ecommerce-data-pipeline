@@ -139,7 +139,7 @@ Reads real-time data from the local Kafka cluster, processing in micro-batches e
 
 ### 4. Database Load (`src/load/db_upserter.py`)
 
-Performs upsert operations (INSERT ... ON CONFLICT) for all dimension tables:
+Performs upsert operations (INSERT ... ON CONFLICT) for all dimension tables and returns the generated Surrogate Keys (`SERIAL`) for Fact table enrichment:
 
 | Function                      | Target Table   | Conflict Key  |
 |-------------------------------|----------------|---------------|
@@ -156,20 +156,20 @@ Performs upsert operations (INSERT ... ON CONFLICT) for all dimension tables:
 
 ### Dimension Tables
 
-| Table          | Primary Key   | Description                                            |
-|----------------|---------------|--------------------------------------------------------|
-| `dim_product`  | `product_id`  | Product information (id, name, sku, price, ...)        |
-| `dim_store`    | `store_id`    | Store details (store_id, store_name)                   |
-| `dim_location` | `location_id` | Geographic location (country, region, city)            |
-| `dim_customer` | `customer_id` | Customer identity (device_id / email / user_id_db)     |
-| `dim_device`   | `device_id`   | Device info (user_agent, resolution, OS, browser)      |
-| `dim_date`     | `date_id`     | Date attributes (full_date, day_of_week, quarter, ...) |
+| Table          | Primary Key (Surrogate) | Natural Key (Unique) & Description                     |
+|----------------|-------------------------|--------------------------------------------------------|
+| `dim_product`  | `product_key` (SERIAL)  | `product_id` — Product information (id, name, sku...)  |
+| `dim_store`    | `store_key` (SERIAL)    | `store_id` — Store details (store_id, store_name)      |
+| `dim_location` | `location_key` (SERIAL) | `location_id` — Geographic location (country, city...) |
+| `dim_customer` | `customer_key` (SERIAL) | `customer_id` — Customer identity (email, user_id...)  |
+| `dim_device`   | `device_key` (SERIAL)   | `device_id` — Device info (user_agent, resolution...)  |
+| `dim_date`     | `date_id` (INTEGER)     | `date_id` — Date attributes (full_date, day_of_week...)|
 
 ### Fact Table
 
-| Table                | Primary Key | Foreign Keys                                                                   |
-|----------------------|-------------|--------------------------------------------------------------------------------|
-| `fact_product_views` | `fact_id`   | `product_id`, `store_id`, `location_id`, `customer_id`, `device_id`, `date_id` |
+| Table                | Primary Key | Foreign Keys                                                                           |
+|----------------------|-------------|----------------------------------------------------------------------------------------|
+| `fact_product_views` | `fact_id`   | `product_key`, `store_key`, `location_key`, `customer_key`, `device_key`, `date_id`    |
 
 Additional columns: `ip_address`, `time_stamp`, `collection`, `current_url`, `referrer_url`.
 

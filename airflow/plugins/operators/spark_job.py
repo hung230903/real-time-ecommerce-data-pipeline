@@ -28,20 +28,20 @@ class SparkStreamingOperator(DockerOperator):
     template_fields = DockerOperator.template_fields + ("kafka_topic",)
 
     def __init__(
-            self,
-            # ── Application ──────────────────────────────────────────
-            spark_app_path: str = "src/streaming/spark_runner.py",
-            kafka_topic: str = "product_view",
-            project_path: str = "/app",
-            # ── Postgres (injected from Airflow Connection) ───────────
-            postgres_host: str = "localhost",
-            postgres_port: str = "5432",
-            postgres_db: str = "spark_streaming_schema",
-            postgres_user: str = "postgres",
-            postgres_password: str = "",
-            # ── Kafka bootstrap (injected from Airflow Connection) ────
-            kafka_bootstrap_servers: str = "kafka-0:9092,kafka-1:9092,kafka-2:9092",
-            **kwargs
+        self,
+        # ── Application ──────────────────────────────────────────
+        spark_app_path: str = "src/streaming/spark_runner.py",
+        kafka_topic: str = "product_view",
+        project_path: str = "/app",
+        # ── Postgres (injected from Airflow Connection) ───────────
+        postgres_host: str = "localhost",
+        postgres_port: str = "5432",
+        postgres_db: str = "spark_streaming_schema",
+        postgres_user: str = "postgres",
+        postgres_password: str = "",
+        # ── Kafka bootstrap (injected from Airflow Connection) ────
+        kafka_bootstrap_servers: str = "kafka-0:9092,kafka-1:9092,kafka-2:9092",
+        **kwargs,
     ):
         self.spark_app_path = spark_app_path
         self.kafka_topic = kafka_topic
@@ -54,7 +54,8 @@ class SparkStreamingOperator(DockerOperator):
         self.kafka_bootstrap_servers = kafka_bootstrap_servers
 
         command = [
-            "bash", "-c",
+            "bash",
+            "-c",
             "source ~/miniconda3/bin/activate && "
             "(conda env update --file /spark/environment.yml --prune || conda env create --file /spark/environment.yml) && "
             "conda activate pyspark_conda_env && "
@@ -66,7 +67,7 @@ class SparkStreamingOperator(DockerOperator):
             "--conf spark.yarn.dist.archives=/tmp/pyspark_conda_env.tar.gz#environment "
             "--deploy-mode client "
             "--master yarn "
-            f"{spark_app_path}"
+            f"{spark_app_path}",
         ]
 
         mounts = [

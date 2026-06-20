@@ -6,9 +6,11 @@ Schedule: Weekly (every Sunday at 2 AM).
 """
 
 from datetime import datetime, timedelta
+
 from airflow import DAG
-from airflow.operators.python import PythonOperator, BranchPythonOperator
 from airflow.models import TaskInstance
+from airflow.operators.python import BranchPythonOperator, PythonOperator
+
 from plugins.operators.data_archival import PostgresArchivalOperator
 
 # ─── Default Arguments ────────────────────────────────────────────────
@@ -37,9 +39,11 @@ TABLES_TO_MONITOR = [
 
 # ─── Task Callables ──────────────────────────────────────────────────
 
+
 def _check_archival_candidates(ti: TaskInstance, **kwargs):
     """Identify records eligible for archival."""
     from plugins.hooks.postgres_hook_ext import PostgresExtendedHook
+
     hook = PostgresExtendedHook(postgres_conn_id="postgres_streaming")
 
     sql = f"SELECT COUNT(*) FROM fact_product_views WHERE time_stamp < NOW() - INTERVAL '{RETENTION_DAYS} days'"
@@ -74,6 +78,7 @@ def _skip_archival(**kwargs):
 def _check_storage_sizes(ti: TaskInstance, **kwargs):
     """Check table sizes for monitoring."""
     from plugins.hooks.postgres_hook_ext import PostgresExtendedHook
+
     hook = PostgresExtendedHook(postgres_conn_id="postgres_streaming")
 
     sizes = {}
@@ -91,7 +96,9 @@ def _check_storage_sizes(ti: TaskInstance, **kwargs):
 
 def _generate_archival_report(ti: TaskInstance, **kwargs):
     """Generate archival summary report."""
-    archival_check = ti.xcom_pull(task_ids="check_archival_candidates", key="archival_check")
+    archival_check = ti.xcom_pull(
+        task_ids="check_archival_candidates", key="archival_check"
+    )
     storage_sizes = ti.xcom_pull(task_ids="check_storage_sizes", key="storage_sizes")
 
     report = {
@@ -113,9 +120,11 @@ def _cleanup_staging(**kwargs):
     print("🧹 Cleaning up staging tables and temporary data...")
     print("✅ Staging cleanup complete.")
 
+
 def _optimize_database(**kwargs):
     """Optimize the database tables."""
     from plugins.hooks.postgres_hook_ext import PostgresExtendedHook
+
     hook = PostgresExtendedHook(postgres_conn_id="postgres_streaming")
     print("🚀 Running VACUUM ANALYZE across database...")
     try:
@@ -123,6 +132,7 @@ def _optimize_database(**kwargs):
         print("✅ Optimization complete.")
     except Exception as e:
         print(f"⚠️ Optimization failed: {e}")
+
 
 # ─── DAG Definition ──────────────────────────────────────────────────
 
@@ -135,7 +145,6 @@ with DAG(
     catchup=False,
     tags=["archival", "maintenance"],
 ) as dag:
-
     check_archival_candidates = PythonOperator(
         task_id="check_archival_candidates",
         python_callable=_check_archival_candidates,
@@ -183,4 +192,9 @@ with DAG(
     check_archival_candidates >> branch_archival
     branch_archival >> [skip_archival, archive_old_records]
     [skip_archival, archive_old_records] >> cleanup_staging
-    cleanup_staging >> check_storage_sizes >> optimize_database >> generate_archival_report
+    (
+        cleanup_staging
+        >> check_storage_sizes
+        >> optimize_database
+        >> generate_archival_report
+    )

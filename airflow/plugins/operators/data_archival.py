@@ -4,16 +4,16 @@ Custom Data Archival Operators for Airflow.
 Automates data retention policies and database maintenance.
 """
 
-from typing import Any, Dict, List, Optional
 from airflow.models import BaseOperator
 from airflow.utils.context import Context
+
 from plugins.hooks.postgres_hook_ext import PostgresExtendedHook
 
 
 class PostgresArchivalOperator(BaseOperator):
     """
     Operator that manages data archival and table optimization.
-    
+
     :param table_name: Table to archive/optimize.
     :param retention_days: Records older than this will be archived.
     :param optimize: Whether to run VACUUM ANALYZE after archival.
@@ -28,7 +28,7 @@ class PostgresArchivalOperator(BaseOperator):
         retention_days: int = 30,
         optimize: bool = True,
         postgres_conn_id: str = "postgres_streaming",
-        **kwargs
+        **kwargs,
     ):
         super().__init__(**kwargs)
         self.table_name = table_name
@@ -40,13 +40,15 @@ class PostgresArchivalOperator(BaseOperator):
         """Execute archival and maintenance."""
         self.log.info(f"Starting archival for table: {self.table_name}")
         hook = PostgresExtendedHook(postgres_conn_id=self.postgres_conn_id)
-        
+
         # 1. Archival process
         try:
             # We call the method from your existing hook
             count = hook.archive_old_events(days_to_keep=self.retention_days)
-            self.log.info(f"✅ Successfully archived {count} records from {self.table_name}")
-            context['ti'].xcom_push(key='archived_count', value=count)
+            self.log.info(
+                f"✅ Successfully archived {count} records from {self.table_name}"
+            )
+            context["ti"].xcom_push(key="archived_count", value=count)
         except Exception as e:
             self.log.error(f"💥 Failed to archive records: {e}")
             raise
@@ -58,4 +60,6 @@ class PostgresArchivalOperator(BaseOperator):
                 hook.vacuum_table(self.table_name)
                 self.log.info(f"✅ Optimization complete for {self.table_name}")
             except Exception as e:
-                self.log.warning(f"⚠️ Optimization failed for {self.table_name} (non-critical): {e}")
+                self.log.warning(
+                    f"⚠️ Optimization failed for {self.table_name} (non-critical): {e}"
+                )

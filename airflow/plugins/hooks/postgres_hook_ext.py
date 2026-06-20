@@ -55,7 +55,9 @@ class PostgresExtendedHook(PostgresHook):
             "total_rows": row_count,
             "null_counts": null_counts,
             "completeness_pct": round(
-                (1 - sum(null_counts.values()) / max(row_count * len(columns), 1)) * 100, 2
+                (1 - sum(null_counts.values()) / max(row_count * len(columns), 1))
+                * 100,
+                2,
             ),
         }
 
@@ -82,10 +84,7 @@ class PostgresExtendedHook(PostgresHook):
             ORDER BY ordinal_position
         """
         records = self.get_records(sql)
-        return [
-            {"column": r[0], "data_type": r[1], "nullable": r[2]}
-            for r in records
-        ]
+        return [{"column": r[0], "data_type": r[1], "nullable": r[2]} for r in records]
 
     def get_error_rate(self, table: str, expected_min: int = 0) -> Dict[str, Any]:
         """
@@ -123,7 +122,9 @@ class PostgresExtendedHook(PostgresHook):
         count = self.get_first(count_sql)[0]
 
         if count > 0:
-            self.log.info(f"Archiving {count} old event records (older than {days_to_keep} days)")
+            self.log.info(
+                f"Archiving {count} old event records (older than {days_to_keep} days)"
+            )
             self.run(
                 f"DELETE FROM fact_product_views "
                 f"WHERE time_stamp < NOW() - INTERVAL '{days_to_keep} days'"

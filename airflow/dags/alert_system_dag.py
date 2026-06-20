@@ -8,11 +8,11 @@ Schedule: Every 10 minutes.
 """
 
 from datetime import datetime, timedelta
-from typing import Dict, List
+from typing import Dict
 
 from airflow import DAG
-from airflow.operators.python import PythonOperator
 from airflow.models import TaskInstance
+from airflow.operators.python import PythonOperator
 
 # ─── Default Arguments ────────────────────────────────────────────────
 
@@ -76,6 +76,7 @@ SEVERITY_PRIORITY = {"CRITICAL": 1, "HIGH": 2, "MEDIUM": 3, "LOW": 4}
 
 # ─── Task Callables ──────────────────────────────────────────────────
 
+
 def _evaluate_alert_rules(ti: TaskInstance, **kwargs):
     """Evaluate all alert rules and identify triggered alerts."""
     triggered_alerts = []
@@ -83,7 +84,7 @@ def _evaluate_alert_rules(ti: TaskInstance, **kwargs):
     for rule in ALERT_RULES:
         try:
             result = _check_rule(rule)
-            
+
             # Handle both boolean and tuple (boolean, dynamic_description) returns
             if isinstance(result, tuple):
                 is_triggered, dynamic_desc = result
@@ -121,10 +122,12 @@ def _check_rule(rule: Dict) -> bool:
 
     if check_type == "kafka_health":
         try:
-            from plugins.hooks.kafka_hook import KafkaMonitoringHook
-            from airflow.models import Variable
             import socket
             from contextlib import closing
+
+            from airflow.models import Variable
+
+            from plugins.hooks.kafka_hook import KafkaMonitoringHook
 
             # 1. Check Local Kafka
             local_hook = KafkaMonitoringHook(kafka_conn_id="kafka_default")
@@ -135,17 +138,22 @@ def _check_rule(rule: Dict) -> bool:
             remote_up = True
             if remote_servers:
                 import re
-                remote_servers = re.sub(r'^Val\s*\(Value\):\s*', '', remote_servers, flags=re.IGNORECASE).strip()
-                remote_up = False # Assume down until one succeeds
-                for server in remote_servers.split(','):
+
+                remote_servers = re.sub(
+                    r"^Val\s*\(Value\):\s*", "", remote_servers, flags=re.IGNORECASE
+                ).strip()
+                remote_up = False  # Assume down until one succeeds
+                for server in remote_servers.split(","):
                     try:
                         server = server.strip()
                         if not server:
                             continue
-                        host_port = server.split(':')
+                        host_port = server.split(":")
                         host = host_port[0].strip()
                         port = int(host_port[1].strip()) if len(host_port) > 1 else 9092
-                        with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as sock:
+                        with closing(
+                            socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        ) as sock:
                             sock.settimeout(5)
                             if sock.connect_ex((host, port)) == 0:
                                 remote_up = True
@@ -160,6 +168,7 @@ def _check_rule(rule: Dict) -> bool:
     elif check_type == "table_count":
         try:
             from plugins.hooks.postgres_hook_ext import PostgresExtendedHook
+
             hook = PostgresExtendedHook(postgres_conn_id="postgres_streaming")
             count = hook.check_record_count(rule.get("table", "fact_product_views"))
             return count <= rule.get("threshold", 0)
@@ -169,6 +178,7 @@ def _check_rule(rule: Dict) -> bool:
     elif check_type == "data_quality":
         try:
             from plugins.hooks.postgres_hook_ext import PostgresExtendedHook
+
             hook = PostgresExtendedHook(postgres_conn_id="postgres_streaming")
             dup_count = hook.check_duplicate_count("fact_product_views", "fact_id")
             return dup_count > 0
@@ -177,37 +187,40 @@ def _check_rule(rule: Dict) -> bool:
 
     elif check_type == "data_freshness":
         try:
-            from plugins.hooks.postgres_hook_ext import PostgresExtendedHook
             from datetime import datetime, timedelta
+
+            from plugins.hooks.postgres_hook_ext import PostgresExtendedHook
 
             hook = PostgresExtendedHook(postgres_conn_id="postgres_streaming")
             table = rule.get("table", "fact_product_views")
             ts_col = rule.get("timestamp_column", "time_stamp")
             max_delay = rule.get("max_delay_minutes", 15)
-            
+
             sql = f"SELECT MAX({ts_col}) FROM {table}"
             record = hook.get_first(sql)
-            
+
             if not record or not record[0]:
                 return False  # Table is empty, fact_table_empty rule will handle this
-                
+
             latest_ts = record[0]
-            
+
             if type(latest_ts) is str:
                 # Fallback if DB driver returns string
                 try:
-                    latest_ts = datetime.fromisoformat(latest_ts.replace('Z', '+00:00'))
+                    latest_ts = datetime.fromisoformat(latest_ts.replace("Z", "+00:00"))
                 except ValueError:
-                    latest_ts = datetime.strptime(latest_ts.split('.')[0], "%Y-%m-%d %H:%M:%S")
+                    latest_ts = datetime.strptime(
+                        latest_ts.split(".")[0], "%Y-%m-%d %H:%M:%S"
+                    )
 
             now = datetime.utcnow()
             if latest_ts.tzinfo:
                 now = datetime.now(latest_ts.tzinfo)
-                
+
             if now - latest_ts > timedelta(minutes=max_delay):
                 desc = f"Streaming stuck: No new data in {table} since {latest_ts.strftime('%H:%M:%S')} (>{max_delay} mins delay)"
                 return True, desc
-            
+
             return False
         except Exception as e:
             print(f"Error checking data freshness: {e}")
@@ -219,20 +232,24 @@ def _check_rule(rule: Dict) -> bool:
 
     elif check_type == "dag_failure":
         try:
-            from airflow.models import DagRun
-            from airflow.utils.state import State
-            from airflow.utils.session import create_session
-            from airflow.utils import timezone
             from datetime import timedelta
-            
+
+            from airflow.models import DagRun
+            from airflow.utils import timezone
+            from airflow.utils.session import create_session
+            from airflow.utils.state import State
+
             with create_session() as session:
                 # Check for DAG runs that failed in the last 15 minutes
                 time_threshold = timezone.utcnow() - timedelta(minutes=15)
-                failed_runs = session.query(DagRun).filter(
-                    DagRun.state == State.FAILED,
-                    DagRun.end_date >= time_threshold
-                ).all()
-                
+                failed_runs = (
+                    session.query(DagRun)
+                    .filter(
+                        DagRun.state == State.FAILED, DagRun.end_date >= time_threshold
+                    )
+                    .all()
+                )
+
                 if failed_runs:
                     failed_dag_ids = list(set([run.dag_id for run in failed_runs]))
                     desc = f"Failed DAGs detected in the last 15 mins: {', '.join(failed_dag_ids)}"
@@ -251,7 +268,9 @@ def _classify_and_prioritize(ti: TaskInstance, **kwargs):
 
     if not alerts:
         print("ℹ️  No alerts triggered.")
-        ti.xcom_push(key="classified_alerts", value={"alerts": [], "requires_escalation": False})
+        ti.xcom_push(
+            key="classified_alerts", value={"alerts": [], "requires_escalation": False}
+        )
         return
 
     classified = {
@@ -290,7 +309,9 @@ def _send_notifications(ti: TaskInstance, **kwargs):
     import requests
     from airflow.models import Variable
 
-    classified = ti.xcom_pull(task_ids="classify_and_prioritize", key="classified_alerts")
+    classified = ti.xcom_pull(
+        task_ids="classify_and_prioritize", key="classified_alerts"
+    )
 
     if not classified or not classified.get("alerts"):
         print("ℹ️  No notifications to send.")
@@ -319,7 +340,9 @@ def _send_notifications(ti: TaskInstance, **kwargs):
         print()
 
         # 2. Add to Telegram message
-        message_lines.append(f"{severity_emoji} <b>[{alert['severity']}] {alert['name']}</b>")
+        message_lines.append(
+            f"{severity_emoji} <b>[{alert['severity']}] {alert['name']}</b>"
+        )
         message_lines.append(f"<i>{alert['description']}</i>")
         message_lines.append(f"⏱ Triggered: {alert['triggered_at']}\n")
 
@@ -337,11 +360,7 @@ def _send_notifications(ti: TaskInstance, **kwargs):
     if bot_token and chat_id:
         try:
             telegram_url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-            payload = {
-                "chat_id": chat_id,
-                "text": message_text,
-                "parse_mode": "HTML"
-            }
+            payload = {"chat_id": chat_id, "text": message_text, "parse_mode": "HTML"}
             response = requests.post(telegram_url, json=payload, timeout=10)
             response.raise_for_status()
             print("✅ Telegram notification sent successfully!")
@@ -349,7 +368,9 @@ def _send_notifications(ti: TaskInstance, **kwargs):
             print(f"❌ Failed to send Telegram notification: {e}")
     else:
         print("ℹ️  Telegram credentials not configured. Skipping Telegram notification.")
-        print("   Please set 'TELEGRAM_BOT_TOKEN' and 'TELEGRAM_CHAT_ID' in Airflow Variables.")
+        print(
+            "   Please set 'TELEGRAM_BOT_TOKEN' and 'TELEGRAM_CHAT_ID' in Airflow Variables."
+        )
 
     notifications_sent = {
         "total_alerts": len(classified["alerts"]),
@@ -388,7 +409,6 @@ with DAG(
     - **LOW**: Informational (e.g., storage growth)
     """,
 ) as dag:
-
     evaluate_rules = PythonOperator(
         task_id="evaluate_alert_rules",
         python_callable=_evaluate_alert_rules,

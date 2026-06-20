@@ -11,8 +11,9 @@ Schedule: Every 15 minutes.
 from datetime import datetime, timedelta
 
 from airflow import DAG
-from airflow.operators.python import PythonOperator
 from airflow.models import TaskInstance
+from airflow.operators.python import PythonOperator
+
 from plugins.operators.data_quality import DataQualityOperator
 
 # ─── Default Arguments ────────────────────────────────────────────────
@@ -39,6 +40,7 @@ STAR_SCHEMA_TABLES = [
 ]
 
 # ─── Task Callables ──────────────────────────────────────────────────
+
 
 def _check_completeness(ti: TaskInstance, **kwargs):
     """Check data completeness across all star schema tables."""
@@ -93,7 +95,9 @@ def _monitor_error_rates(ti: TaskInstance, **kwargs):
 
 def _generate_quality_report(ti: TaskInstance, **kwargs):
     """Summarize data quality results."""
-    completeness = ti.xcom_pull(task_ids="check_completeness", key="completeness_results")
+    completeness = ti.xcom_pull(
+        task_ids="check_completeness", key="completeness_results"
+    )
     data_types = ti.xcom_pull(task_ids="check_data_types", key="data_type_results")
     error_rates = ti.xcom_pull(task_ids="monitor_error_rates", key="error_rate_results")
 
@@ -125,7 +129,6 @@ with DAG(
     catchup=False,
     tags=["quality", "monitoring"],
 ) as dag:
-
     completeness = PythonOperator(
         task_id="check_completeness",
         python_callable=_check_completeness,
@@ -141,9 +144,21 @@ with DAG(
         task_id="check_business_rules",
         postgres_conn_id="postgres_streaming",
         sql_checks=[
-            {"name": "no_orphan_customer", "sql": "SELECT COUNT(*) FROM fact_product_views f LEFT JOIN dim_customer d ON f.customer_id = d.customer_id WHERE d.customer_id IS NULL", "expected_result": 0},
-            {"name": "no_orphan_product", "sql": "SELECT COUNT(*) FROM fact_product_views f LEFT JOIN dim_product d ON f.product_id = d.product_id WHERE d.product_id IS NULL", "expected_result": 0},
-            {"name": "no_duplicate_events", "sql": "SELECT COUNT(*) - COUNT(DISTINCT fact_id) FROM fact_product_views", "expected_result": 0},
+            {
+                "name": "no_orphan_customer",
+                "sql": "SELECT COUNT(*) FROM fact_product_views f LEFT JOIN dim_customer d ON f.customer_id = d.customer_id WHERE d.customer_id IS NULL",
+                "expected_result": 0,
+            },
+            {
+                "name": "no_orphan_product",
+                "sql": "SELECT COUNT(*) FROM fact_product_views f LEFT JOIN dim_product d ON f.product_id = d.product_id WHERE d.product_id IS NULL",
+                "expected_result": 0,
+            },
+            {
+                "name": "no_duplicate_events",
+                "sql": "SELECT COUNT(*) - COUNT(DISTINCT fact_id) FROM fact_product_views",
+                "expected_result": 0,
+            },
         ],
     )
 

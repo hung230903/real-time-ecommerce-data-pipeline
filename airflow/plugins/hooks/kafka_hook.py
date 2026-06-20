@@ -40,20 +40,17 @@ class KafkaMonitoringHook(BaseHook):
             extra = conn.extra_dejson if conn.extra else {}
             host = conn.host or "localhost"
             port = conn.port or 9092
-            
+
             # If host contains a comma, it's likely a bootstrap_servers string
             if "," in host:
                 default_bootstrap = host
             else:
                 default_bootstrap = f"{host}:{port}"
-                
+
             self._conn = {
                 "host": host,
                 "port": port,
-                "bootstrap_servers": extra.get(
-                    "bootstrap_servers",
-                    default_bootstrap
-                ),
+                "bootstrap_servers": extra.get("bootstrap_servers", default_bootstrap),
                 "sasl_mechanism": extra.get("sasl_mechanism", "PLAIN"),
                 "security_protocol": extra.get("security_protocol", "SASL_PLAINTEXT"),
                 "username": conn.login or extra.get("username", ""),
@@ -88,7 +85,7 @@ class KafkaMonitoringHook(BaseHook):
                 sock.settimeout(timeout)
                 try:
                     result = sock.connect_ex((host, port))
-                    is_up = (result == 0)
+                    is_up = result == 0
                 except Exception as e:
                     self.log.warning(f"Error checking {host}:{port} - {e}")
                     is_up = False

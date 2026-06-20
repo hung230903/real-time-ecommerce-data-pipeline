@@ -26,13 +26,13 @@ Required Airflow setup (UI → Admin):
         Host      : <kafka bootstrap servers>
 """
 
-import json
 from datetime import datetime, timedelta
 
 from airflow import DAG
 from airflow.hooks.base import BaseHook
-from airflow.models import Variable, TaskInstance
-from airflow.operators.python import PythonOperator, BranchPythonOperator
+from airflow.models import TaskInstance, Variable
+from airflow.operators.python import BranchPythonOperator, PythonOperator
+
 from plugins.operators.spark_job import SparkStreamingOperator
 
 # ─── Configuration (resolved at parse time from Airflow store) ────────
@@ -65,12 +65,14 @@ default_args = {
 
 # ─── Task Callables ──────────────────────────────────────────────────
 
+
 def _pre_flight_checks(ti: TaskInstance, **kwargs):
     """Run connectivity checks before submitting Spark job."""
     checks = {"kafka": False, "postgres": False}
 
     try:
         from plugins.hooks.kafka_hook import KafkaMonitoringHook
+
         hook = KafkaMonitoringHook(kafka_conn_id="kafka_default")
         checks["kafka"] = hook.check_broker_connectivity(timeout=5)
     except:
@@ -78,6 +80,7 @@ def _pre_flight_checks(ti: TaskInstance, **kwargs):
 
     try:
         from plugins.hooks.postgres_hook_ext import PostgresExtendedHook
+
         pg_hook = PostgresExtendedHook(postgres_conn_id="postgres_streaming")
         pg_hook.get_first("SELECT 1")
         checks["postgres"] = True
@@ -104,6 +107,7 @@ def _preflight_failed(**kwargs):
 def _post_job_status(ti: TaskInstance, **kwargs):
     """Check post-job status."""
     from plugins.hooks.postgres_hook_ext import PostgresExtendedHook
+
     hook = PostgresExtendedHook(postgres_conn_id="postgres_streaming")
     count = hook.get_fact_table_count()
     print(f"📊 Fact records count: {count}")
@@ -113,6 +117,7 @@ def _cleanup_resources(**kwargs):
     """Clean up Docker resources."""
     try:
         import docker
+
         client = docker.from_env()
         for c in client.containers.list(all=True):
             if c.name.startswith("airflow-spark-"):
@@ -132,7 +137,6 @@ with DAG(
     catchup=False,
     tags=["spark", "streaming"],
 ) as dag:
-
     pre_flight = PythonOperator(
         task_id="pre_flight_checks",
         python_callable=_pre_flight_checks,
