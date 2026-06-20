@@ -9,7 +9,7 @@ Tests the logic of custom hooks:
 import os
 import sys
 import unittest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 # Add plugins to path
 PLUGINS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "plugins")

@@ -84,15 +84,15 @@ class TestDAGValidation(unittest.TestCase):
     def _validate_dag_tasks(self, module_name, dag_id, expected_tasks):
         """Helper to validate DAG task list by reading file content."""
         dag_path = os.path.join(DAGS_DIR, f"{module_name}.py")
-        if os.path.exists(dag_path):
-            with open(dag_path, "r") as f:
-                content = f.read()
-            for task in expected_tasks:
-                self.assertIn(
-                    f"task_id=\"{task}\"",
-                    content,
-                    f"Task '{task}' not found in DAG file '{module_name}.py'",
-                )
+        self.assertTrue(os.path.exists(dag_path), f"DAG file '{module_name}.py' not found")
+        with open(dag_path, "r") as f:
+            content = f.read()
+        for task in expected_tasks:
+            self.assertIn(
+                f"task_id=\"{task}\"",
+                content,
+                f"Task '{task}' not found in DAG file '{module_name}.py'",
+            )
 
 
 class TestDAGSchedule(unittest.TestCase):
@@ -100,11 +100,11 @@ class TestDAGSchedule(unittest.TestCase):
 
     def test_kafka_monitoring_schedule(self):
         """Kafka monitoring should run every 2 minutes."""
-        self._check_schedule_in_file("kafka_monitoring_dag", "*/2 * * * *")
+        self._check_schedule_in_file("kafka_local_monitoring", "*/2 * * * *")
 
     def test_data_transfer_schedule(self):
-        """Data transfer should run every 5 minutes."""
-        self._check_schedule_in_file("data_transfer_dag", "*/5 * * * *")
+        """Data transfer should run daily."""
+        self._check_schedule_in_file("kafka_producer_control_dag", "@daily")
 
     def test_data_quality_schedule(self):
         """Data quality should run every 15 minutes."""
@@ -121,14 +121,14 @@ class TestDAGSchedule(unittest.TestCase):
     def _check_schedule_in_file(self, module_name, expected_schedule):
         """Check that a DAG file contains the expected schedule."""
         dag_path = os.path.join(DAGS_DIR, f"{module_name}.py")
-        if os.path.exists(dag_path):
-            with open(dag_path, "r") as f:
-                content = f.read()
-            self.assertIn(
-                expected_schedule,
-                content,
-                f"Expected schedule '{expected_schedule}' not found in {module_name}",
-            )
+        self.assertTrue(os.path.exists(dag_path), f"DAG file '{module_name}.py' not found")
+        with open(dag_path, "r") as f:
+            content = f.read()
+        self.assertIn(
+            expected_schedule,
+            content,
+            f"Expected schedule '{expected_schedule}' not found in {module_name}",
+        )
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ Pytest configuration and fixtures.
 
 import os
 import sys
+
 import pytest
 
 # Add project paths
@@ -17,6 +18,7 @@ sys.path.insert(0, ROOT_DIR)
 def mock_postgres_hook():
     """Provide a mocked PostgresExtendedHook."""
     from unittest.mock import MagicMock
+
     hook = MagicMock()
     hook.get_staging_count.return_value = 0
     hook.get_fact_table_count.return_value = 0
@@ -28,6 +30,7 @@ def mock_postgres_hook():
 def mock_kafka_hook():
     """Provide a mocked KafkaMonitoringHook."""
     from unittest.mock import MagicMock
+
     hook = MagicMock()
     hook.check_broker_connectivity.return_value = True
     hook.get_cluster_health.return_value = {
