@@ -1,0 +1,108 @@
+services:
+  namenode:
+    image: hadoop:3.3.6
+    networks:
+      - streaming-network
+    hostname: namenode
+    command: /usr/local/bin/start-namenode.sh
+    ports:
+      - '9870:9870'
+    volumes:
+      - namenode_data:/data
+      - ./conf/capacity-scheduler.xml:/usr/local/hadoop/etc/hadoop/capacity-scheduler.xml
+      - ./conf/core-site.xml:/usr/local/hadoop/etc/hadoop/core-site.xml
+      - ./conf/hdfs-site.xml:/usr/local/hadoop/etc/hadoop/hdfs-site.xml
+      - ./conf/mapred-site.xml:/usr/local/hadoop/etc/hadoop/mapred-site.xml
+      - ./conf/yarn-site.xml:/usr/local/hadoop/etc/hadoop/yarn-site.xml
+  datanode1:
+    image: hadoop:3.3.6
+    networks:
+      - streaming-network
+    hostname: datanode1
+    command: [ "hdfs", "datanode" ]
+    ports:
+      - '19864:9864'
+    volumes:
+      - datanode1_data:/data
+      - ./conf/capacity-scheduler.xml:/usr/local/hadoop/etc/hadoop/capacity-scheduler.xml
+      - ./conf/core-site.xml:/usr/local/hadoop/etc/hadoop/core-site.xml
+      - ./conf/hdfs-site.xml:/usr/local/hadoop/etc/hadoop/hdfs-site.xml
+      - ./conf/mapred-site.xml:/usr/local/hadoop/etc/hadoop/mapred-site.xml
+      - ./conf/yarn-site.xml:/usr/local/hadoop/etc/hadoop/yarn-site.xml
+  datanode2:
+    image: hadoop:3.3.6
+    networks:
+      - streaming-network
+    hostname: datanode2
+    command: [ "hdfs", "datanode" ]
+    ports:
+      - '29864:9864'
+    volumes:
+      - datanode2_data:/data
+      - ./conf/capacity-scheduler.xml:/usr/local/hadoop/etc/hadoop/capacity-scheduler.xml
+      - ./conf/core-site.xml:/usr/local/hadoop/etc/hadoop/core-site.xml
+      - ./conf/hdfs-site.xml:/usr/local/hadoop/etc/hadoop/hdfs-site.xml
+      - ./conf/mapred-site.xml:/usr/local/hadoop/etc/hadoop/mapred-site.xml
+      - ./conf/yarn-site.xml:/usr/local/hadoop/etc/hadoop/yarn-site.xml
+  resourcemanager:
+    image: hadoop:3.3.6
+    networks:
+      - streaming-network
+    hostname: resourcemanager
+    command: [ "yarn", "resourcemanager" ]
+    ports:
+      - '8088:8088'
+    volumes:
+      - resourcemanager_data:/data
+      - ./conf/capacity-scheduler.xml:/usr/local/hadoop/etc/hadoop/capacity-scheduler.xml
+      - ./conf/core-site.xml:/usr/local/hadoop/etc/hadoop/core-site.xml
+      - ./conf/hdfs-site.xml:/usr/local/hadoop/etc/hadoop/hdfs-site.xml
+      - ./conf/mapred-site.xml:/usr/local/hadoop/etc/hadoop/mapred-site.xml
+      - ./conf/yarn-site.xml:/usr/local/hadoop/etc/hadoop/yarn-site.xml
+  nodemanager1:
+    image: hadoop:3.3.6
+    networks:
+      - streaming-network
+    hostname: nodemanager1
+    command: [ "yarn", "nodemanager" ]
+    ports:
+      - '18042:8042'
+    volumes:
+      - nodemanager1_data:/data
+      - ./conf/capacity-scheduler.xml:/usr/local/hadoop/etc/hadoop/capacity-scheduler.xml
+      - ./conf/core-site.xml:/usr/local/hadoop/etc/hadoop/core-site.xml
+      - ./conf/hdfs-site.xml:/usr/local/hadoop/etc/hadoop/hdfs-site.xml
+      - ./conf/mapred-site.xml:/usr/local/hadoop/etc/hadoop/mapred-site.xml
+      - ./conf/yarn-site.xml:/usr/local/hadoop/etc/hadoop/yarn-site.xml
+  nodemanager2:
+    image: hadoop:3.3.6
+    networks:
+      - streaming-network
+    hostname: nodemanager2
+    command: [ "yarn", "nodemanager" ]
+    ports:
+      - '28042:8042'
+    volumes:
+      - nodemanager2_data:/data
+      - ./conf/capacity-scheduler.xml:/usr/local/hadoop/etc/hadoop/capacity-scheduler.xml
+      - ./conf/core-site.xml:/usr/local/hadoop/etc/hadoop/core-site.xml
+      - ./conf/hdfs-site.xml:/usr/local/hadoop/etc/hadoop/hdfs-site.xml
+      - ./conf/mapred-site.xml:/usr/local/hadoop/etc/hadoop/mapred-site.xml
+      - ./conf/yarn-site.xml:/usr/local/hadoop/etc/hadoop/yarn-site.xml
+
+networks:
+  streaming-network:
+    external: true
+volumes:
+  namenode_data:
+    driver: local
+  datanode1_data:
+    driver: local
+  datanode2_data:
+    driver: local
+  resourcemanager_data:
+    driver: local
+  nodemanager1_data:
+    driver: local
+  nodemanager2_data:
+    driver: local
