@@ -18,8 +18,8 @@ dependencies = [
     "pytest-mock",
 ]
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "pytest-cov",
 ]
 

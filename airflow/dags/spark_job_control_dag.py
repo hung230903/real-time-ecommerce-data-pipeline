@@ -14,6 +14,10 @@ Required Airflow setup (UI → Admin):
     - kafka_target_topic  : Kafka topic to consume
                             (default: product_view)
   Connections:
+    - conn_id "hadoop_default" (optional):
+        Conn Type : Generic
+        Host      : <namenode hostname>   (default: namenode)
+        Extra     : {"resourcemanager_host": "resourcemanager"}
     - conn_id "postgres_streaming":
         Conn Type : Postgres
         Host      : <postgres host / docker bridge IP>
@@ -31,9 +35,11 @@ from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.hooks.base import BaseHook
 from airflow.models import TaskInstance, Variable
-from airflow.operators.python import BranchPythonOperator, PythonOperator
+from airflow.operators.python import PythonOperator
 
 from plugins.operators.spark_job import SparkStreamingOperator
+from plugins.sensors.hadoop_sensor import HadoopClusterSensor
+from plugins.sensors.kafka_sensor import KafkaBrokerSensor
 
 # ─── Configuration (resolved at parse time from Airflow store) ────────
 
@@ -66,42 +72,16 @@ default_args = {
 # ─── Task Callables ──────────────────────────────────────────────────
 
 
-def _pre_flight_checks(ti: TaskInstance, **kwargs):
-    """Run connectivity checks before submitting Spark job."""
-    checks = {"kafka": False, "postgres": False}
+def _check_postgres(**kwargs):
+    """Run connectivity check for Postgres before submitting Spark job."""
+    from plugins.hooks.postgres_hook_ext import PostgresExtendedHook
 
     try:
-        from plugins.hooks.kafka_hook import KafkaMonitoringHook
-
-        hook = KafkaMonitoringHook(kafka_conn_id="kafka_default")
-        checks["kafka"] = hook.check_broker_connectivity(timeout=5)
-    except:
-        checks["kafka"] = False
-
-    try:
-        from plugins.hooks.postgres_hook_ext import PostgresExtendedHook
-
         pg_hook = PostgresExtendedHook(postgres_conn_id="postgres_streaming")
         pg_hook.get_first("SELECT 1")
-        checks["postgres"] = True
-    except:
-        checks["postgres"] = False
-
-    ti.xcom_push(key="preflight_pass", value=all(checks.values()))
-    print(f"🛫 Pre-flight checks: {checks}")
-    return checks
-
-
-def _branch_on_preflight(ti: TaskInstance, **kwargs):
-    """Branch based on pre-flight results."""
-    if ti.xcom_pull(task_ids="pre_flight_checks", key="preflight_pass"):
-        return "submit_spark_streaming_job"
-    return "preflight_failed"
-
-
-def _preflight_failed(**kwargs):
-    """Handle pre-flight failure."""
-    raise ValueError("Pre-flight checks failed. Spark job aborted.")
+        print("🛫 Postgres pre-flight check passed.")
+    except Exception as e:
+        raise ValueError(f"Postgres pre-flight check failed: {e}")
 
 
 def _post_job_status(ti: TaskInstance, **kwargs):
@@ -137,19 +117,32 @@ with DAG(
     catchup=False,
     tags=["spark", "streaming"],
 ) as dag:
-    pre_flight = PythonOperator(
-        task_id="pre_flight_checks",
-        python_callable=_pre_flight_checks,
+    wait_for_kafka = KafkaBrokerSensor(
+        task_id="wait_for_kafka",
+        kafka_conn_id="kafka_default",
+        bootstrap_servers=KAFKA_BOOTSTRAP_SERVERS,
+        conn_timeout=5,
+        mode="reschedule",
+        poke_interval=60,
+        timeout=60 * 10,  # 10 minutes timeout
     )
 
-    branch_preflight = BranchPythonOperator(
-        task_id="branch_on_preflight",
-        python_callable=_branch_on_preflight,
+    wait_for_hadoop = HadoopClusterSensor(
+        task_id="wait_for_hadoop",
+        namenode_host="namenode",
+        namenode_port=8020,
+        resourcemanager_host="resourcemanager",
+        resourcemanager_port=8088,
+        conn_timeout=5,
+        check_both=True,
+        mode="reschedule",
+        poke_interval=60,
+        timeout=60 * 10,  # 10 minutes timeout
     )
 
-    preflight_failed = PythonOperator(
-        task_id="preflight_failed",
-        python_callable=_preflight_failed,
+    check_postgres = PythonOperator(
+        task_id="check_postgres",
+        python_callable=_check_postgres,
     )
 
     # SUCCESS: all config injected from Airflow Variables / Connections
@@ -178,7 +171,6 @@ with DAG(
     )
 
     # Dependencies
-    pre_flight >> branch_preflight
-    branch_preflight >> [submit_spark_job, preflight_failed]
+    # Kafka + Hadoop sensors run in parallel, both must pass
+    [wait_for_kafka, wait_for_hadoop] >> check_postgres >> submit_spark_job
     submit_spark_job >> post_status >> cleanup
-    preflight_failed >> cleanup

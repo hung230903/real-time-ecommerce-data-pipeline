@@ -134,6 +134,7 @@ def _check_rule(rule: Dict) -> bool:
             local_up = local_hook.check_broker_connectivity(timeout=5)
 
             # 2. Check Remote Kafka (via Variable with Failover)
+            # kafka-0:9092,kafka-1:9092,kafka-2:9092
             remote_servers = Variable.get("SERVER_BOOTSTRAP_SERVERS", default_var=None)
             remote_up = True
             if remote_servers:

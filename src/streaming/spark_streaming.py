@@ -153,7 +153,9 @@ def load_dimension_maps(batch_df):
         device_map = {}
 
     # Date map: keyed by date_id (YYYYMMDD int as string)
-    cur.execute("SELECT date_key, date_id FROM dim_date")
+    # dim_date has no surrogate key – date_id IS the key, so we map it
+    # to itself (identity mapping) for consistency with other dimensions.
+    cur.execute("SELECT date_id, date_id FROM dim_date")
     date_map = {str(row[0]): str(row[1]) for row in cur.fetchall()}
 
     cur.close()
