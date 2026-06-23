@@ -1,2 +1,3 @@
-# This directory is intentionally left empty.
-# Custom sensors were removed as they were not used by any DAG.
+# Custom Airflow Sensors for the streaming pipeline.
+# - KafkaBrokerSensor     (kafka_sensor.py)
+# - HadoopClusterSensor   (hadoop_sensor.py)

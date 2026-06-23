@@ -1,2 +1,4 @@
-# This directory is intentionally left empty.
-# Custom operators were removed as they were not used by any DAG.
+# Custom Airflow Operators for the streaming pipeline.
+# - SparkStreamingOperator  (spark_job.py)
+# - DataQualityOperator     (data_quality.py)
+# - PostgresArchivalOperator (data_archival.py)

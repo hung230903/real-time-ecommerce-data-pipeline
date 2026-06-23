@@ -56,7 +56,8 @@ airflow/
 │   │   ├── data_archival.py               # Custom archival and maintenance operators
 │   │   └── spark_job.py                   # Spark job submission operators
 │   └── sensors/
-│       └── kafka_sensor.py                # Custom Kafka topic/message sensors
+│       ├── kafka_sensor.py                # Custom Kafka broker availability sensor
+│       └── hadoop_sensor.py               # Custom Hadoop cluster (HDFS + YARN) sensor
 │
 ├── tests/                                 # Test suite
 │   ├── conftest.py                        # Pytest fixtures
@@ -91,7 +92,7 @@ airflow/
 | `data_quality`               | `*/15 * * * *`   | Runs comprehensive data quality checks           |
 | `data_archival`              | Weekly (Sun 2AM) | Manages data retention & storage optimization    |
 | `alert_system`               | `*/10 * * * *`   | Centralized alerting with Telegram notifications |
-| `health_check_kafka_server`  | `*/2 * * * *`    | Connectivity check for remote Kafka server (via UI Variables) |
+| `health_check_kafka_server`  | `*/5 * * * *`    | Connectivity check for remote Kafka server (via UI Variables) |
 
 ### DAG: `kafka_producer_control`
 
@@ -111,14 +112,17 @@ airflow/
 
 **Tasks Details:**
 
-1. **`pre_flight_checks`** — Verifies Kafka & PostgreSQL connectivity
-2. **`branch_on_preflight`** — Branches: PASS → submit job, FAIL → abort
-3. **`submit_spark_streaming_job`** — Submits the Spark job via DockerOperator:
+1. **`wait_for_kafka`** — `KafkaBrokerSensor` in `reschedule` mode: waits up to 10 minutes for at least one Kafka broker to become reachable, freeing the worker slot between pokes (every 60 s)
+2. **`wait_for_hadoop`** — `HadoopClusterSensor` in `reschedule` mode: verifies both the HDFS NameNode (port 8020) and YARN ResourceManager (port 8088) are reachable before allowing Spark submission
+3. **`check_postgres`** — Runs a simple `SELECT 1` against the PostgreSQL Data Warehouse to ensure connectivity
+4. **`submit_spark_streaming_job`** — Submits the Spark job via `SparkStreamingOperator` (extends `DockerOperator`):
     - Image: `unigap/spark:3.5`
     - Sets up conda environment → `conda pack` → `spark-submit` to YARN
     - Mounts project source, Spark lib cache, and data volumes
-4. **`post_job_status`** — Checks the fact table row count in PostgreSQL
-5. **`cleanup_resources`** — Removes leftover Docker containers (trigger_rule: `all_done`)
+5. **`post_job_status`** — Checks the fact table row count in PostgreSQL
+6. **`cleanup_resources`** — Removes leftover Docker containers (trigger_rule: `all_done`)
+
+**Flow:** `[wait_for_kafka, wait_for_hadoop]` (parallel) → `check_postgres` → `submit_spark_streaming_job` → `post_job_status` → `cleanup_resources`
 
 ### DAG: `alert_system`
 
@@ -209,17 +213,35 @@ indicators for alert descriptions, and timestamps
 
 **Tasks Details:**
 
-1. **`health_check`** — Direct TCP socket connection check to the remote Kafka production server defined in the `SERVER_BOOTSTRAP_SERVERS` Airflow Variable.
-2. **`branch`** — Routes the flow based on server status (UP/DOWN).
-3. **`server_is_up`** — Execution path when the remote cluster is operating normally.
-4. **`server_is_down`** — Execution path when a failure is detected; triggers a branch result that can be monitored by the `alert_system`.
+1. **`health_check`** — `KafkaBrokerSensor` in `poke` mode: checks TCP connectivity to the remote Kafka brokers defined in the `SERVER_BOOTSTRAP_SERVERS` Airflow Variable. Pokes every 30 s with a 1-minute timeout.
+2. **`server_is_up`** — Runs when `health_check` succeeds (default `trigger_rule: all_success`). Logs a success message.
+3. **`server_is_down`** — Runs when `health_check` fails (`trigger_rule: one_failed`). Logs a warning and raises an exception to mark the DAG as FAILED for alerting.
 
-## Custom Plugins (Hooks)
+> **Note:** Routing is handled via Airflow's `trigger_rule` mechanism instead of `BranchPythonOperator`, ensuring the DAG correctly reflects a FAILED state when the cluster is down.
+
+## Custom Plugins
+
+### Hooks
 
 | Hook                   | Description                                                     |
 |------------------------|-----------------------------------------------------------------|
 | `KafkaMonitoringHook`  | Checks broker connectivity, cluster health, and response time   |
 | `PostgresExtendedHook` | Extended hook: fact table count, data quality, archival, VACUUM |
+
+### Operators
+
+| Operator                   | Description                                                                |
+|----------------------------|----------------------------------------------------------------------------|
+| `SparkStreamingOperator`   | Wraps `DockerOperator` to submit Spark-on-YARN jobs with pre-configured mounts, env vars, and `spark-submit` command |
+| `DataQualityOperator`      | Runs a list of SQL checks against PostgreSQL; fails the task if any check returns an unexpected result |
+| `PostgresArchivalOperator` | Archives records older than a configurable retention threshold from the fact table |
+
+### Sensors
+
+| Sensor                 | Description                                                                  |
+|------------------------|------------------------------------------------------------------------------|
+| `KafkaBrokerSensor`    | Waits for at least one Kafka broker to be reachable via TCP; supports multi-broker failover and `reschedule` mode |
+| `HadoopClusterSensor`  | Waits for HDFS NameNode and YARN ResourceManager to be reachable before Spark job submission |
 
 ## Setup
 
