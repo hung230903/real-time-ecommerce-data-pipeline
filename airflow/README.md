@@ -107,7 +107,7 @@ airflow/
 
 ### DAG: `spark_job_control`
 
-<img src="./images/dags/spark_job_control_dag.jpg">
+<img src="./images/dags/spark_job_control_dag.jpg"
 
 **Tasks Details:**
 
@@ -125,7 +125,7 @@ airflow/
 
 ### DAG: `alert_system`
 
-<img =src="./images/dags/alert_system_dag.jpg"
+<img src="./images/dags/alert_system_dag.jpg"
 
 **Tasks Details:**
 
@@ -177,7 +177,7 @@ indicators for alert descriptions, and timestamps
 
 ### DAG: `kafka_local_monitoring`
 
-<img =src="./images/dags/kafka_local_monitoring_dag.jpg"
+<img src="./images/dags/kafka_local_monitoring_dag.jpg"
 
 **Tasks Details:**
 
@@ -190,7 +190,7 @@ indicators for alert descriptions, and timestamps
 
 ### DAG: `data_quality`
 
-<img =src="./images/dags/data_quality_dag.jpg"
+<img src="./images/dags/data_quality_dag.jpg"
 
 **Tasks Details:**
 
@@ -203,7 +203,7 @@ indicators for alert descriptions, and timestamps
 
 ### DAG: `data_archival`
 
-<img =src="./images/dags/data_archival_dag.jpg"
+<img src="./images/dags/data_archival_dag.jpg"
 
 **Tasks Details:**
 
@@ -218,7 +218,7 @@ indicators for alert descriptions, and timestamps
 
 ### DAG: `health_check_kafka_server`
 
-<img =src="./images/dags/kafka_remote_health_check_dag.jpg"
+<img src="./images/dags/kafka_remote_health_check_dag.jpg"
 
 **Tasks Details:**
 
