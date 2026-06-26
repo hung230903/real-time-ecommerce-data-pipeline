@@ -8,23 +8,23 @@ Airflow project that manages and monitors the entire real-time data pipeline:
 - [Project Flow Overview](#project-flow-overview)
 - [Project Structure](#project-structure)
 - [DAGs Overview](#dags-overview)
-    - [Core DAGs](#core-dags)
-    - [Monitoring & Quality DAGs](#monitoring--quality-dags)
-    - [DAG: kafka_producer_control](#dag-kafka_producer_control)
-    - [DAG: spark_job_control](#dag-spark_job_control)
-    - [DAG: alert_system](#dag-alert_system)
-    - [DAG: kafka_local_monitoring](#dag-kafka_local_monitoring)
-    - [DAG: data_quality](#dag-data_quality)
-    - [DAG: data_archival](#dag-data_archival)
-    - [DAG: health_check_kafka_server](#dag-health_check_kafka_server)
+  - [Core DAGs](#core-dags)
+  - [Monitoring & Quality DAGs](#monitoring--quality-dags)
+  - [DAG: kafka_producer_control](#dag-kafka_producer_control)
+  - [DAG: spark_job_control](#dag-spark_job_control)
+  - [DAG: alert_system](#dag-alert_system)
+  - [DAG: kafka_local_monitoring](#dag-kafka_local_monitoring)
+  - [DAG: data_quality](#dag-data_quality)
+  - [DAG: data_archival](#dag-data_archival)
+  - [DAG: health_check_kafka_server](#dag-health_check_kafka_server)
 - [Custom Plugins (Hooks)](#custom-plugins-hooks)
 - [Setup](#setup)
-    - [1. Create Docker network](#1-create-docker-network)
-    - [2. Build custom Airflow image](#2-build-custom-airflow-image)
-    - [3. Initialize the environment](#3-initialize-the-environment)
-    - [4. Initialize Airflow config](#4-initialize-airflow-config)
-    - [5. Initialize the database](#5-initialize-the-database)
-    - [6. Start Airflow](#6-start-airflow)
+  - [1. Create Docker network](#1-create-docker-network)
+  - [2. Build custom Airflow image](#2-build-custom-airflow-image)
+  - [3. Initialize the environment](#3-initialize-the-environment)
+  - [4. Initialize Airflow config](#4-initialize-airflow-config)
+  - [5. Initialize the database](#5-initialize-the-database)
+  - [6. Start Airflow](#6-start-airflow)
 - [Airflow Services](#airflow-services)
 - [Web Interface](#web-interface)
 - [Testing](#testing)
@@ -32,7 +32,7 @@ Airflow project that manages and monitors the entire real-time data pipeline:
 
 ## Project Flow Overview
 
-<img src="./images/airflow_diagram.jpeg">
+<img src="./images/airflow-flow-diagram.png">
 
 ## Project Structure
 
@@ -80,35 +80,34 @@ airflow/
 ### Core DAGs
 
 | DAG                      | Schedule | Description                                                                            |
-|--------------------------|----------|----------------------------------------------------------------------------------------|
+| ------------------------ | -------- | -------------------------------------------------------------------------------------- |
 | `kafka_producer_control` | `@daily` | Runs the Kafka producer inside a Docker container, forwarding data from Server → Local |
 | `spark_job_control`      | `@daily` | Submits the Spark Structured Streaming job to YARN via Docker                          |
 
 ### Monitoring & Quality DAGs
 
-| DAG                          | Schedule         | Description                                      |
-|------------------------------|------------------|--------------------------------------------------|
-| `kafka_local_monitoring`     | `*/2 * * * *`    | Monitors local Kafka cluster health, throughput, and consumer lag |
-| `data_quality`               | `*/15 * * * *`   | Runs comprehensive data quality checks           |
-| `data_archival`              | Weekly (Sun 2AM) | Manages data retention & storage optimization    |
-| `alert_system`               | `*/10 * * * *`   | Centralized alerting with Telegram notifications |
-| `health_check_kafka_server`  | `*/5 * * * *`    | Connectivity check for remote Kafka server (via UI Variables) |
+| DAG                         | Schedule         | Description                                                       |
+| --------------------------- | ---------------- | ----------------------------------------------------------------- |
+| `kafka_local_monitoring`    | `*/2 * * * *`    | Monitors local Kafka cluster health, throughput, and consumer lag |
+| `data_quality`              | `*/15 * * * *`   | Runs comprehensive data quality checks                            |
+| `data_archival`             | Weekly (Sun 2AM) | Manages data retention & storage optimization                     |
+| `alert_system`              | `*/10 * * * *`   | Centralized alerting with Telegram notifications                  |
+| `health_check_kafka_server` | `*/5 * * * *`    | Connectivity check for remote Kafka server (via UI Variables)     |
 
 ### DAG: `kafka_producer_control`
 
 **Tasks Details:**
 
 1. **`run_kafka_producer`**
-    - Executes the Kafka producer script (`src/kafka/producer.py`) inside a isolated Docker
-      container. It installs necessary dependencies (`confluent-kafka`, `python-dotenv`) at runtime and forwards data
-      from
-      the remote server to the local cluster.
-    - Forwards data from the remote Kafka Server to the local Kafka cluster
+   - Executes the Kafka producer script (`src/kafka/producer.py`) inside a isolated Docker
+     container. It installs necessary dependencies (`confluent-kafka`, `python-dotenv`) at runtime and forwards data
+     from
+     the remote server to the local cluster.
+   - Forwards data from the remote Kafka Server to the local Kafka cluster
 
 ### DAG: `spark_job_control`
 
-**Flow**<br>
-<img src="./images/airflow_full_architecture_mockup_1778739959425.png">
+<img src="./images/dags/spark_job_control_dag.jpg">
 
 **Tasks Details:**
 
@@ -116,15 +115,17 @@ airflow/
 2. **`wait_for_hadoop`** — `HadoopClusterSensor` in `reschedule` mode: verifies both the HDFS NameNode (port 8020) and YARN ResourceManager (port 8088) are reachable before allowing Spark submission
 3. **`check_postgres`** — Runs a simple `SELECT 1` against the PostgreSQL Data Warehouse to ensure connectivity
 4. **`submit_spark_streaming_job`** — Submits the Spark job via `SparkStreamingOperator` (extends `DockerOperator`):
-    - Image: `unigap/spark:3.5`
-    - Sets up conda environment → `conda pack` → `spark-submit` to YARN
-    - Mounts project source, Spark lib cache, and data volumes
+   - Image: `unigap/spark:3.5`
+   - Sets up conda environment → `conda pack` → `spark-submit` to YARN
+   - Mounts project source, Spark lib cache, and data volumes
 5. **`post_job_status`** — Checks the fact table row count in PostgreSQL
 6. **`cleanup_resources`** — Removes leftover Docker containers (trigger_rule: `all_done`)
 
 **Flow:** `[wait_for_kafka, wait_for_hadoop]` (parallel) → `check_postgres` → `submit_spark_streaming_job` → `post_job_status` → `cleanup_resources`
 
 ### DAG: `alert_system`
+
+<img =src="./images/dags/alert_system_dag.jpg"
 
 **Tasks Details:**
 
@@ -138,7 +139,7 @@ airflow/
 **Alert Rules:**
 
 | Rule                   | Severity | Check Type       | Description                                                         |
-|------------------------|----------|------------------|---------------------------------------------------------------------|
+| ---------------------- | -------- | ---------------- | ------------------------------------------------------------------- |
 | `kafka_broker_down`    | CRITICAL | `kafka_health`   | Pings Kafka broker via TCP socket to verify reachability            |
 | `fact_table_empty`     | HIGH     | `table_check`    | Queries `fact_product_views` to ensure it contains data             |
 | `low_data_quality`     | MEDIUM   | `data_quality`   | Checks for duplicate `fact_id` records in the fact table            |
@@ -158,23 +159,25 @@ indicators for alert descriptions, and timestamps
 
 **Required Airflow Variables** (set via Admin → Variables in the Airflow UI):
 
-| Variable                   | Description                             | How to obtain                     |
-|----------------------------|-----------------------------------------|-----------------------------------|
-| `SERVER_BOOTSTRAP_SERVERS` | Remote Kafka Bootstrap (IP:Port,...)    | From Infrastructure Admin         |
-| `TELEGRAM_BOT_TOKEN`       | Bot API token from @BotFather           | Telegram → @BotFather → `/newbot` |
-| `TELEGRAM_CHAT_ID`         | Target chat ID for notifications        | Telegram → @GetsMyIDBot           |
-| `project_path`             | Absolute path to project on host        | Run `pwd` in the project root     |
-| `kafka_target_topic`       | Default local Kafka topic               | e.g., `product_view`              |
+| Variable                   | Description                          | How to obtain                     |
+| -------------------------- | ------------------------------------ | --------------------------------- |
+| `SERVER_BOOTSTRAP_SERVERS` | Remote Kafka Bootstrap (IP:Port,...) | From Infrastructure Admin         |
+| `TELEGRAM_BOT_TOKEN`       | Bot API token from @BotFather        | Telegram → @BotFather → `/newbot` |
+| `TELEGRAM_CHAT_ID`         | Target chat ID for notifications     | Telegram → @GetsMyIDBot           |
+| `project_path`             | Absolute path to project on host     | Run `pwd` in the project root     |
+| `kafka_target_topic`       | Default local Kafka topic            | e.g., `product_view`              |
 
 **Required Airflow Connections** (set via Admin → Connections in the Airflow UI):
 
-| Conn Id              | Conn Type | Host / JSON / Extra Details                               | Description                                |
-|----------------------|-----------|-----------------------------------------------------------|--------------------------------------------|
-| `postgres_streaming` | Postgres  | Host: `172.18.0.1` (or local IP), DB: `spark_streaming_schema` | Connects to PostgreSQL Data Warehouse      |
-| `local_kafka_conn`   | Kafka     | Host: `kafka-0:9092,kafka-1:9092...`, Extra: `{"topic": "..."}` | Connects Airflow sensors to local Kafka    |
-| `kafka_default`      | Kafka     | Host: Remote bootstrap servers, Extra: SASL configurations | Connects to the upstream Kafka server      |
+| Conn Id              | Conn Type | Host / JSON / Extra Details                                     | Description                             |
+| -------------------- | --------- | --------------------------------------------------------------- | --------------------------------------- |
+| `postgres_streaming` | Postgres  | Host: `172.18.0.1` (or local IP), DB: `spark_streaming_schema`  | Connects to PostgreSQL Data Warehouse   |
+| `local_kafka_conn`   | Kafka     | Host: `kafka-0:9092,kafka-1:9092...`, Extra: `{"topic": "..."}` | Connects Airflow sensors to local Kafka |
+| `kafka_default`      | Kafka     | Host: Remote bootstrap servers, Extra: SASL configurations      | Connects to the upstream Kafka server   |
 
 ### DAG: `kafka_local_monitoring`
+
+<img =src="./images/dags/kafka_local_monitoring_dag.jpg"
 
 **Tasks Details:**
 
@@ -187,6 +190,8 @@ indicators for alert descriptions, and timestamps
 
 ### DAG: `data_quality`
 
+<img =src="./images/dags/data_quality_dag.jpg"
+
 **Tasks Details:**
 
 1. **`check_completeness`** — Verifies row counts and data presence across the entire star schema.
@@ -197,6 +202,8 @@ indicators for alert descriptions, and timestamps
 5. **`generate_quality_report`** — Summarizes all quality metrics into a central status report (HEALTHY/DEGRADED).
 
 ### DAG: `data_archival`
+
+<img =src="./images/dags/data_archival_dag.jpg"
 
 **Tasks Details:**
 
@@ -211,6 +218,8 @@ indicators for alert descriptions, and timestamps
 
 ### DAG: `health_check_kafka_server`
 
+<img =src="./images/dags/kafka_remote_health_check_dag.jpg"
+
 **Tasks Details:**
 
 1. **`health_check`** — `KafkaBrokerSensor` in `poke` mode: checks TCP connectivity to the remote Kafka brokers defined in the `SERVER_BOOTSTRAP_SERVERS` Airflow Variable. Pokes every 30 s with a 1-minute timeout.
@@ -224,24 +233,24 @@ indicators for alert descriptions, and timestamps
 ### Hooks
 
 | Hook                   | Description                                                     |
-|------------------------|-----------------------------------------------------------------|
+| ---------------------- | --------------------------------------------------------------- |
 | `KafkaMonitoringHook`  | Checks broker connectivity, cluster health, and response time   |
 | `PostgresExtendedHook` | Extended hook: fact table count, data quality, archival, VACUUM |
 
 ### Operators
 
-| Operator                   | Description                                                                |
-|----------------------------|----------------------------------------------------------------------------|
+| Operator                   | Description                                                                                                          |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `SparkStreamingOperator`   | Wraps `DockerOperator` to submit Spark-on-YARN jobs with pre-configured mounts, env vars, and `spark-submit` command |
-| `DataQualityOperator`      | Runs a list of SQL checks against PostgreSQL; fails the task if any check returns an unexpected result |
-| `PostgresArchivalOperator` | Archives records older than a configurable retention threshold from the fact table |
+| `DataQualityOperator`      | Runs a list of SQL checks against PostgreSQL; fails the task if any check returns an unexpected result               |
+| `PostgresArchivalOperator` | Archives records older than a configurable retention threshold from the fact table                                   |
 
 ### Sensors
 
-| Sensor                 | Description                                                                  |
-|------------------------|------------------------------------------------------------------------------|
-| `KafkaBrokerSensor`    | Waits for at least one Kafka broker to be reachable via TCP; supports multi-broker failover and `reschedule` mode |
-| `HadoopClusterSensor`  | Waits for HDFS NameNode and YARN ResourceManager to be reachable before Spark job submission |
+| Sensor                | Description                                                                                                       |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `KafkaBrokerSensor`   | Waits for at least one Kafka broker to be reachable via TCP; supports multi-broker failover and `reschedule` mode |
+| `HadoopClusterSensor` | Waits for HDFS NameNode and YARN ResourceManager to be reachable before Spark job submission                      |
 
 ## Setup
 
@@ -310,7 +319,7 @@ docker compose ps
 ## Airflow Services
 
 | Service             | Description                                               |
-|---------------------|-----------------------------------------------------------|
+| ------------------- | --------------------------------------------------------- |
 | `airflow-webserver` | Web interface available at http://localhost:18080         |
 | `airflow-scheduler` | Monitors all tasks & DAGs, triggers task instances        |
 | `airflow-worker`    | Executes tasks assigned by the scheduler (CeleryExecutor) |
