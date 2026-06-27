@@ -13,4 +13,17 @@ dependencies = [
     "sqlalchemy>=2.0.47",
     "streamlit>=1.54.0",
     "user-agents>=2.2.0",
+    "ip2location>=8.10.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.14.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = [
+  "."
 ]

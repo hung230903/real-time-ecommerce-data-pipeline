@@ -9,24 +9,25 @@ analytics dashboard built on Streamlit.
 - [Tech Stack](#tech-stack)
 - [Project Structure](#project-structure)
 - [Data Flow](#data-flow)
-    - [1. Kafka Producer](#1-kafka-producer-srckafkaproducerpy)
-    - [2. Spark Structured Streaming](#2-spark-structured-streaming-srcstreaming)
-    - [3. Data Processing](#3-data-processing-srcprocessing)
-    - [4. Database Load](#4-database-load-srcloaddb_upserterpy)
+  - [1. Kafka Producer](#1-kafka-producer-srckafkaproducerpy)
+  - [2. Spark Structured Streaming](#2-spark-structured-streaming-srcstreaming)
+  - [3. Data Processing](#3-data-processing-srcprocessing)
+  - [4. Database Load](#4-database-load-srcloaddb_upserterpy)
 - [Star Schema](#star-schema)
-    - [Dimension Tables](#dimension-tables)
-    - [Fact Table](#fact-table)
+  - [Dimension Tables](#dimension-tables)
+  - [Fact Table](#fact-table)
 - [Kafka Cluster](#kafka-cluster)
 - [Streamlit Dashboard](#streamlit-dashboard)
+- [Testing](#testing)
 - [Setup](#setup)
-    - [1. Create Docker network](#1-create-docker-network)
-    - [2. Start Kafka cluster](#2-start-kafka-cluster)
-    - [3. Start PostgreSQL](#3-start-postgresql)
-    - [4. Create the Star Schema database](#4-create-the-star-schema-database)
-    - [5. Build the Spark image](#5-build-the-spark-image)
-    - [6. Configure environment variables](#6-configure-environment-variables)
-    - [7. Run the Kafka Producer](#7-run-the-kafka-producer)
-    - [8. Run Spark Streaming](#8-run-spark-streaming)
+  - [1. Create Docker network](#1-create-docker-network)
+  - [2. Start Kafka cluster](#2-start-kafka-cluster)
+  - [3. Start PostgreSQL](#3-start-postgresql)
+  - [4. Create the Star Schema database](#4-create-the-star-schema-database)
+  - [5. Build the Spark image](#5-build-the-spark-image)
+  - [6. Configure environment variables](#6-configure-environment-variables)
+  - [7. Run the Kafka Producer](#7-run-the-kafka-producer)
+  - [8. Run Spark Streaming](#8-run-spark-streaming)
 - [Environment Variables](#environment-variables)
 - [Monitoring](#monitoring)
 - [References](#references)
@@ -38,7 +39,7 @@ analytics dashboard built on Streamlit.
 ## Tech Stack
 
 | Component    | Technology                                                           |
-|--------------|----------------------------------------------------------------------|
+| ------------ | -------------------------------------------------------------------- |
 | Messaging    | Apache Kafka 7.6.1 (Confluent, KRaft mode, 3 brokers)                |
 | Processing   | Apache Spark 3.5.x (Structured Streaming, PySpark)                   |
 | Database     | PostgreSQL 16.3 (Star Schema — Kimball)                              |
@@ -68,6 +69,11 @@ analytics dashboard built on Streamlit.
 │   ├── report_dashboard/
 │   │   └── dashboard.py             # Streamlit real-time analytics dashboard
 │   └── setup_db_schema.sql          # DDL to create database & Star Schema tables
+│
+├── tests/                           # Unit tests for source code
+│   ├── kafka/                       # Kafka producer tests
+│   ├── load/                        # DB upsert tests
+│   └── processing/                  # Data transformer & enricher tests
 │
 ├── config/
 │   ├── base.py                      # Centralized configuration (Kafka, Postgres, Spark) from .env
@@ -133,7 +139,7 @@ Reads real-time data from the local Kafka cluster, processing in micro-batches e
 ### 3. Data Processing (`src/processing/`)
 
 | Module                | Description                                                    |
-|-----------------------|----------------------------------------------------------------|
+| --------------------- | -------------------------------------------------------------- |
 | `data_transformer.py` | Transforms store_name, customer_id, device_id (SHA-256), date  |
 | `ip_enricher.py`      | Looks up IP → country, region, city via IP2Location offline DB |
 
@@ -142,7 +148,7 @@ Reads real-time data from the local Kafka cluster, processing in micro-batches e
 Performs upsert operations (INSERT ... ON CONFLICT) for all dimension tables and returns the generated Surrogate Keys (`SERIAL`) for Fact table enrichment:
 
 | Function                      | Target Table   | Conflict Key  |
-|-------------------------------|----------------|---------------|
+| ----------------------------- | -------------- | ------------- |
 | `upsert_product_dimension()`  | `dim_product`  | `product_id`  |
 | `upsert_store_dimension()`    | `dim_store`    | `store_id`    |
 | `upsert_location_dimension()` | `dim_location` | `location_id` |
@@ -156,20 +162,20 @@ Performs upsert operations (INSERT ... ON CONFLICT) for all dimension tables and
 
 ### Dimension Tables
 
-| Table          | Primary Key (Surrogate) | Natural Key (Unique) & Description                     |
-|----------------|-------------------------|--------------------------------------------------------|
-| `dim_product`  | `product_key` (SERIAL)  | `product_id` — Product information (id, name, sku...)  |
-| `dim_store`    | `store_key` (SERIAL)    | `store_id` — Store details (store_id, store_name)      |
-| `dim_location` | `location_key` (SERIAL) | `location_id` — Geographic location (country, city...) |
-| `dim_customer` | `customer_key` (SERIAL) | `customer_id` — Customer identity (email, user_id...)  |
-| `dim_device`   | `device_key` (SERIAL)   | `device_id` — Device info (user_agent, resolution...)  |
-| `dim_date`     | `date_id` (INTEGER)     | `date_id` — Date attributes (full_date, day_of_week...)|
+| Table          | Primary Key (Surrogate) | Natural Key (Unique) & Description                      |
+| -------------- | ----------------------- | ------------------------------------------------------- |
+| `dim_product`  | `product_key` (SERIAL)  | `product_id` — Product information (id, name, sku...)   |
+| `dim_store`    | `store_key` (SERIAL)    | `store_id` — Store details (store_id, store_name)       |
+| `dim_location` | `location_key` (SERIAL) | `location_id` — Geographic location (country, city...)  |
+| `dim_customer` | `customer_key` (SERIAL) | `customer_id` — Customer identity (email, user_id...)   |
+| `dim_device`   | `device_key` (SERIAL)   | `device_id` — Device info (user_agent, resolution...)   |
+| `dim_date`     | `date_id` (INTEGER)     | `date_id` — Date attributes (full_date, day_of_week...) |
 
 ### Fact Table
 
-| Table                | Primary Key | Foreign Keys                                                                           |
-|----------------------|-------------|----------------------------------------------------------------------------------------|
-| `fact_product_views` | `fact_id`   | `product_key`, `store_key`, `location_key`, `customer_key`, `device_key`, `date_id`    |
+| Table                | Primary Key | Foreign Keys                                                                        |
+| -------------------- | ----------- | ----------------------------------------------------------------------------------- |
+| `fact_product_views` | `fact_id`   | `product_key`, `store_key`, `location_key`, `customer_key`, `device_key`, `date_id` |
 
 Additional columns: `ip_address`, `time_stamp`, `collection`, `current_url`, `referrer_url`.
 
@@ -178,7 +184,7 @@ Additional columns: `ip_address`, `time_stamp`, `collection`, `current_url`, `re
 The local Kafka cluster consists of **3 brokers** running in **KRaft mode** (no Zookeeper required):
 
 | Container | Internal Port | External Port | Node ID |
-|-----------|---------------|---------------|---------|
+| --------- | ------------- | ------------- | ------- |
 | `kafka-0` | 9092          | 9094          | 0       |
 | `kafka-1` | 9092          | 9194          | 1       |
 | `kafka-2` | 9092          | 9294          | 2       |
@@ -200,7 +206,30 @@ A real-time analytics dashboard with 6 sections:
 6. **Browser & OS Distribution** — device/browser breakdown
 
 ```bash
-streamlit run src/report_dashboard/dashboard.py
+uv run python -m streamlit run src/report_dashboard/dashboard.py
+```
+
+## Testing
+
+The project includes a robust unit testing suite using `pytest` to validate core logic without connecting to external services. The tests are located in the `tests/` directory:
+
+- **Processing (`tests/processing/`)**: Validates data transformations (date, user-agent parsing) and `IP2Location` geography enrichment using `unittest.mock`.
+- **Database Load (`tests/load/`)**: Mocks PostgreSQL cursors to verify dimension `UPSERT` statements are structured correctly and capture surrogate keys.
+- **Kafka Producer (`tests/kafka/`)**: Asserts message delivery callbacks, exception handling, and correct initialization behaviors.
+
+### Running the Tests
+
+Ensure your virtual environment is configured with development dependencies:
+
+```bash
+# Sync and install all core + dev dependencies
+uv sync
+
+# Run the full test suite
+uv run pytest tests/
+
+# Run tests with verbose output
+uv run pytest tests/ -v
 ```
 
 ## Setup
@@ -250,7 +279,7 @@ cp .env.example .env
 ### 7. Run the Kafka Producer
 
 ```bash
-python -m src.kafka.producer
+uv run -m src.kafka.producer
 ```
 
 ### 8. Run Spark Streaming
@@ -289,7 +318,7 @@ docker run -ti --name kafka-streaming \
 ## Environment Variables
 
 | Variable                   | Description                      | Example                                  |
-|----------------------------|----------------------------------|------------------------------------------|
+| -------------------------- | -------------------------------- | ---------------------------------------- |
 | `SERVER_BOOTSTRAP_SERVERS` | Remote Kafka brokers             | `host1:9094,host2:9094`                  |
 | `SERVER_TOPIC`             | Topic on remote Kafka            | `product_view`                           |
 | `SERVER_SASL_USERNAME`     | Remote SASL username             |                                          |
@@ -309,7 +338,7 @@ docker run -ti --name kafka-streaming \
 ## Monitoring
 
 | Service      | URL                    | Description                                                 |
-|--------------|------------------------|-------------------------------------------------------------|
+| ------------ | ---------------------- | ----------------------------------------------------------- |
 | AKHQ         | http://localhost:8180  | Kafka cluster monitor                                       |
 | Adminer      | http://localhost:8380  | PostgreSQL admin UI                                         |
 | Airflow      | http://localhost:18080 | DAG orchestration UI                                        |

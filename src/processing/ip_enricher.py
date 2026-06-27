@@ -57,6 +57,6 @@ def get_loc_info(ip_address, db_path):
             )
 
     except Exception:
-        logging.error(ip_address, "IS NOT FOUND")
+        logging.error(f"{ip_address} IS NOT FOUND")
         return None
     return None
