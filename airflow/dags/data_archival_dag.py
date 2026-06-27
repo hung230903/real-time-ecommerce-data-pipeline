@@ -66,7 +66,7 @@ def _branch_archival(ti: TaskInstance, **kwargs):
     """Branch based on whether there are records to archive."""
     check = ti.xcom_pull(task_ids="check_archival_candidates", key="archival_check")
     if check and check.get("has_candidates"):
-        return "archive_and_optimize"
+        return "archive_old_records"
     return "skip_archival"
 
 

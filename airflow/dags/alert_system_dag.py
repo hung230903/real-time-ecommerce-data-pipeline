@@ -26,7 +26,6 @@ default_args = {
 }
 
 # ─── Alert Configuration ────────────────────────────────────────────
-
 ALERT_RULES = [
     {
         "name": "kafka_broker_down",
@@ -67,7 +66,7 @@ ALERT_RULES = [
         "check_type": "data_freshness",
         "table": "fact_product_views",
         "timestamp_column": "time_stamp",
-        "max_delay_minutes": 15,
+        "max_delay_minutes": 10,
     },
 ]
 
@@ -81,6 +80,7 @@ def _evaluate_alert_rules(ti: TaskInstance, **kwargs):
     """Evaluate all alert rules and identify triggered alerts."""
     triggered_alerts = []
 
+    # Loop through all alert rules and run _check_rule function for each rule
     for rule in ALERT_RULES:
         try:
             result = _check_rule(rule)
@@ -110,14 +110,15 @@ def _evaluate_alert_rules(ti: TaskInstance, **kwargs):
     # Sort by priority (lower = higher severity)
     triggered_alerts.sort(key=lambda x: x["priority"])
 
+    # Push triggered_alerst list to xcom
     ti.xcom_push(key="triggered_alerts", value=triggered_alerts)
-    ti.xcom_push(key="alert_count", value=len(triggered_alerts))
+    # ti.xcom_push(key="alert_count", value=len(triggered_alerts))
 
     return triggered_alerts
 
 
 def _check_rule(rule: Dict) -> bool:
-    """Check a single alert rule. Returns True if alert should trigger."""
+    """Check a single alert rule. Returns True if alert should trigger(Have problem)."""
     check_type = rule.get("check_type")
 
     if check_type == "kafka_health":
@@ -134,7 +135,6 @@ def _check_rule(rule: Dict) -> bool:
             local_up = local_hook.check_broker_connectivity(timeout=5)
 
             # 2. Check Remote Kafka (via Variable with Failover)
-            # kafka-0:9092,kafka-1:9092,kafka-2:9092
             remote_servers = Variable.get("SERVER_BOOTSTRAP_SERVERS", default_var=None)
             remote_up = True
             if remote_servers:
@@ -265,6 +265,8 @@ def _check_rule(rule: Dict) -> bool:
 
 def _classify_and_prioritize(ti: TaskInstance, **kwargs):
     """Classify alerts by severity and apply escalation rules."""
+
+    # Get triggered_alerts list
     alerts = ti.xcom_pull(task_ids="evaluate_alert_rules", key="triggered_alerts")
 
     if not alerts:
@@ -282,9 +284,11 @@ def _classify_and_prioritize(ti: TaskInstance, **kwargs):
     }
 
     for alert in alerts:
+        """Append rule to severity itself"""
         severity = alert.get("severity", "LOW")
         classified[severity].append(alert)
 
+    # Return True if has atleast 1 CRITICAL rule
     requires_escalation = len(classified["CRITICAL"]) > 0
 
     result = {
@@ -300,6 +304,7 @@ def _classify_and_prioritize(ti: TaskInstance, **kwargs):
         },
     }
 
+    # Push to xcom
     ti.xcom_push(key="classified_alerts", value=result)
     print(f"📊 Alert Summary: {result['summary']}")
     return result

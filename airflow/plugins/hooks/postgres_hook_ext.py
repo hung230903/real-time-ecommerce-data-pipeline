@@ -151,7 +151,7 @@ class PostgresExtendedHook(PostgresHook):
             SELECT 
                 pg_size_pretty(pg_total_relation_size('{table}')) as total_size,
                 pg_size_pretty(pg_relation_size('{table}')) as data_size
-        """
+            """
         result = self.get_first(sql)
         return {
             "table": table,
